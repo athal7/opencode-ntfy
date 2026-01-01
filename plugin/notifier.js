@@ -2,6 +2,23 @@
 // Implements Issue #3: Notifier module
 
 /**
+ * Build headers for ntfy requests
+ * @param {string} [authToken] - Optional ntfy access token for Bearer auth
+ * @returns {Object} Headers object
+ */
+function buildHeaders(authToken) {
+  const headers = {
+    'Content-Type': 'application/json',
+  }
+  
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`
+  }
+  
+  return headers
+}
+
+/**
  * Send a basic notification to ntfy
  * @param {Object} options
  * @param {string} options.server - ntfy server URL
@@ -10,11 +27,36 @@
  * @param {string} options.message - Notification message
  * @param {number} [options.priority] - Priority (1-5, default 3)
  * @param {string[]} [options.tags] - Emoji tags
+ * @param {string} [options.authToken] - Optional ntfy access token for protected topics
  */
-export async function sendNotification({ server, topic, title, message, priority, tags }) {
-  // TODO: Implement in Issue #3
-  // Will use native fetch() to POST to ntfy server
-  throw new Error('Not implemented - see Issue #3')
+export async function sendNotification({ server, topic, title, message, priority, tags, authToken }) {
+  const body = {
+    topic,
+    title,
+    message,
+  }
+
+  // Add optional fields only if provided
+  if (priority !== undefined) {
+    body.priority = priority
+  }
+  if (tags && tags.length > 0) {
+    body.tags = tags
+  }
+
+  try {
+    const response = await fetch(server, {
+      method: 'POST',
+      headers: buildHeaders(authToken),
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      console.warn(`[opencode-ntfy] Notification failed: ${response.status} ${response.statusText}`)
+    }
+  } catch (error) {
+    console.warn(`[opencode-ntfy] Failed to send notification: ${error.message}`)
+  }
 }
 
 /**
@@ -23,21 +65,62 @@ export async function sendNotification({ server, topic, title, message, priority
  * @param {string} options.server - ntfy server URL
  * @param {string} options.topic - ntfy topic name
  * @param {string} options.callbackUrl - Base URL for callbacks
- * @param {string} options.sessionId - OpenCode session ID
- * @param {string} options.permissionId - Permission request ID
+ * @param {string} options.nonce - Single-use nonce for callback authentication
  * @param {string} options.tool - Tool requesting permission
  * @param {string} options.description - Permission description
+ * @param {string} [options.authToken] - Optional ntfy access token for protected topics
  */
 export async function sendPermissionNotification({
   server,
   topic,
   callbackUrl,
-  sessionId,
-  permissionId,
+  nonce,
   tool,
   description,
+  authToken,
 }) {
-  // TODO: Implement in Issue #3
-  // Will include action buttons: Allow Once, Allow Always, Reject
-  throw new Error('Not implemented - see Issue #3')
+  const body = {
+    topic,
+    title: 'OpenCode: Permission',
+    message: `${tool}: ${description}`,
+    priority: 4,
+    tags: ['lock'],
+    actions: [
+      {
+        action: 'http',
+        label: 'Allow Once',
+        url: `${callbackUrl}?nonce=${nonce}&response=once`,
+        method: 'POST',
+        clear: true,
+      },
+      {
+        action: 'http',
+        label: 'Allow Always',
+        url: `${callbackUrl}?nonce=${nonce}&response=always`,
+        method: 'POST',
+        clear: true,
+      },
+      {
+        action: 'http',
+        label: 'Reject',
+        url: `${callbackUrl}?nonce=${nonce}&response=reject`,
+        method: 'POST',
+        clear: true,
+      },
+    ],
+  }
+
+  try {
+    const response = await fetch(server, {
+      method: 'POST',
+      headers: buildHeaders(authToken),
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      console.warn(`[opencode-ntfy] Permission notification failed: ${response.status} ${response.statusText}`)
+    }
+  } catch (error) {
+    console.warn(`[opencode-ntfy] Failed to send permission notification: ${error.message}`)
+  }
 }
