@@ -29,18 +29,26 @@ export function startCallbackServer(port, onPermissionResponse) {
       const nonce = url.searchParams.get('nonce')
       const response = url.searchParams.get('response')
 
-      // Validate nonce
+      // Validate required params first (before consuming nonce)
+      if (!nonce || !response) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' })
+        res.end('Missing required parameters')
+        return
+      }
+
+      // Validate response value before consuming nonce
+      // This prevents burning nonces with invalid responses
+      if (!VALID_RESPONSES.includes(response)) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' })
+        res.end('Invalid response value')
+        return
+      }
+
+      // Validate and consume nonce (single-use)
       const payload = consumeNonce(nonce)
       if (!payload) {
         res.writeHead(401, { 'Content-Type': 'text/plain' })
         res.end('Invalid or expired nonce')
-        return
-      }
-
-      // Validate response value
-      if (!VALID_RESPONSES.includes(response)) {
-        res.writeHead(400, { 'Content-Type': 'text/plain' })
-        res.end('Invalid response value')
         return
       }
 
@@ -60,6 +68,10 @@ export function startCallbackServer(port, onPermissionResponse) {
     // Unknown route
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not found')
+  })
+
+  server.on('error', (err) => {
+    console.error(`[opencode-ntfy] Callback server error: ${err.message}`)
   })
 
   server.listen(port, () => {

@@ -374,6 +374,54 @@ test_callback_invokes_handler_with_correct_args() {
   fi
 }
 
+test_callback_returns_400_for_missing_params_functional() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startCallbackServer } from './plugin/callback.js';
+    
+    const server = startCallbackServer(0, () => {});
+    const port = server.address().port;
+    
+    // Make callback request without nonce param
+    fetch(\`http://localhost:\${port}/callback?response=once\`, { method: 'POST' })
+      .then(res => {
+        if (res.status !== 400) {
+          console.log('FAIL: Expected 400 for missing nonce, got ' + res.status);
+          process.exit(1);
+        }
+        // Also test missing response param
+        return fetch(\`http://localhost:\${port}/callback?nonce=test\`, { method: 'POST' });
+      })
+      .then(res => {
+        if (res.status !== 400) {
+          console.log('FAIL: Expected 400 for missing response, got ' + res.status);
+          process.exit(1);
+        }
+        server.close(() => {
+          console.log('PASS');
+          process.exit(0);
+        });
+      })
+      .catch(err => {
+        console.log('FAIL: ' + err.message);
+        process.exit(1);
+      });
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
 test_callback_returns_404_for_unknown_route_functional() {
   if ! command -v node &>/dev/null; then
     echo "SKIP: node not available"
@@ -464,6 +512,7 @@ for test_func in \
   test_callback_health_endpoint_returns_200 \
   test_callback_returns_401_for_invalid_nonce_functional \
   test_callback_returns_400_for_invalid_response_functional \
+  test_callback_returns_400_for_missing_params_functional \
   test_callback_invokes_handler_with_correct_args \
   test_callback_returns_404_for_unknown_route_functional
 do
