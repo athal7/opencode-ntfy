@@ -91,8 +91,19 @@ if [[ "$(uname)" == "Darwin" ]]; then
   
   mkdir -p "$PLIST_DIR"
   
-  # Find node path
-  NODE_PATH=$(command -v node 2>/dev/null || echo "/usr/local/bin/node")
+  # Find node path (handle both Intel and Apple Silicon Macs)
+  NODE_PATH=$(command -v node 2>/dev/null)
+  if [[ -z "$NODE_PATH" ]]; then
+    # Try Homebrew paths
+    if [[ -x "/opt/homebrew/bin/node" ]]; then
+      NODE_PATH="/opt/homebrew/bin/node"
+    elif [[ -x "/usr/local/bin/node" ]]; then
+      NODE_PATH="/usr/local/bin/node"
+    else
+      echo "  WARNING: node not found, please install Node.js"
+      NODE_PATH="/usr/local/bin/node"
+    fi
+  fi
   
   # Generate plist with correct paths
   cat > "$PLIST_DIR/$PLIST_NAME" << EOF

@@ -32,7 +32,7 @@ const VALID_RESPONSES = ['once', 'always', 'reject']
  * @param {string} permissionId - Permission request ID
  * @returns {string} The generated nonce
  */
-export function createNonce(sessionId, permissionId) {
+function createNonce(sessionId, permissionId) {
   const nonce = randomUUID()
   nonces.set(nonce, {
     sessionId,

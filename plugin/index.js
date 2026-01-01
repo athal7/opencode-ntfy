@@ -79,7 +79,7 @@ export const Notify = async ({ $, client, directory }) => {
       console.log('[opencode-ntfy] Connected to callback service')
     } else {
       console.log('[opencode-ntfy] Callback service not running, interactive permissions disabled')
-      console.log('[opencode-ntfy] Start service with: brew services start opencode-ntfy')
+      console.log('[opencode-ntfy] Start service with: launchctl load ~/Library/LaunchAgents/io.opencode.ntfy.plist')
     }
   } else {
     console.log('[opencode-ntfy] Read-only mode (set callbackHost for interactive permissions)')
@@ -114,7 +114,7 @@ export const Notify = async ({ $, client, directory }) => {
       // Handle permission.updated events (interactive permissions)
       if (event.type === 'permission.updated') {
         const permission = event.properties?.permission
-        if (!permission || permission.status !== 'pending') {
+        if (!permission || permission.status !== 'pending' || !permission.id) {
           return
         }
         
@@ -161,7 +161,8 @@ export const Notify = async ({ $, client, directory }) => {
         idleTimer = null
       }
       
-      if (serviceConnected) {
+      // Use isConnected() as the source of truth (socket may have closed unexpectedly)
+      if (isConnected()) {
         await disconnectFromService()
       }
     },
