@@ -3,4 +3,6 @@ fileignoreconfig:
   checksum: 4463aec6142d4f234ad7359e339c85873ecb6c4a7f54e47dabf0981e8fc18227
 - filename: test/test_helper.bash
   checksum: f0af468cdbc917a8db548735d81ceadb673cc02c4654a49cba895eb469e9c50c
+- filename: plugin/index.js
+  checksum: fc5b9db24c83987c29c8fe565e7101d1e2943bafe47a500b01f1ca31e0614dbf
 version: "1.0"

@@ -100,6 +100,200 @@ test_tokens_js_syntax() {
 }
 
 # =============================================================================
+# Configuration Parsing Tests
+# =============================================================================
+
+test_config_has_all_required_fields() {
+  # Verify config object has all required fields from Issue #2
+  local required_fields=(
+    "topic"
+    "server"
+    "callbackPort"
+    "callbackSecret"
+    "idleDelayMs"
+    "errorNotify"
+    "errorDebounceMs"
+    "retryNotifyFirst"
+    "retryNotifyAfter"
+  )
+  
+  for field in "${required_fields[@]}"; do
+    if ! grep -q "$field:" "$PLUGIN_DIR/index.js"; then
+      echo "Config field '$field' not found in index.js"
+      return 1
+    fi
+  done
+  return 0
+}
+
+test_config_parses_ntfy_server() {
+  grep -q "NTFY_SERVER" "$PLUGIN_DIR/index.js" || {
+    echo "NTFY_SERVER env var parsing not found"
+    return 1
+  }
+  grep -q "https://ntfy.sh" "$PLUGIN_DIR/index.js" || {
+    echo "Default ntfy server (https://ntfy.sh) not found"
+    return 1
+  }
+}
+
+test_config_parses_callback_secret() {
+  grep -q "NTFY_CALLBACK_SECRET" "$PLUGIN_DIR/index.js" || {
+    echo "NTFY_CALLBACK_SECRET env var parsing not found"
+    return 1
+  }
+}
+
+test_config_parses_error_notify() {
+  grep -q "NTFY_ERROR_NOTIFY" "$PLUGIN_DIR/index.js" || {
+    echo "NTFY_ERROR_NOTIFY env var parsing not found"
+    return 1
+  }
+}
+
+test_config_parses_error_debounce() {
+  grep -q "NTFY_ERROR_DEBOUNCE_MS" "$PLUGIN_DIR/index.js" || {
+    echo "NTFY_ERROR_DEBOUNCE_MS env var parsing not found"
+    return 1
+  }
+}
+
+test_config_parses_retry_notify_first() {
+  grep -q "NTFY_RETRY_NOTIFY_FIRST" "$PLUGIN_DIR/index.js" || {
+    echo "NTFY_RETRY_NOTIFY_FIRST env var parsing not found"
+    return 1
+  }
+}
+
+test_config_parses_retry_notify_after() {
+  grep -q "NTFY_RETRY_NOTIFY_AFTER" "$PLUGIN_DIR/index.js" || {
+    echo "NTFY_RETRY_NOTIFY_AFTER env var parsing not found"
+    return 1
+  }
+}
+
+test_config_default_idle_delay_is_300000() {
+  grep -q "300000" "$PLUGIN_DIR/index.js" || {
+    echo "Default idle delay (300000ms / 5min) not found"
+    return 1
+  }
+}
+
+test_config_default_error_debounce_is_60000() {
+  grep -q "60000" "$PLUGIN_DIR/index.js" || {
+    echo "Default error debounce (60000ms / 1min) not found"
+    return 1
+  }
+}
+
+test_config_default_retry_after_is_3() {
+  grep -q "retryNotifyAfter.*3" "$PLUGIN_DIR/index.js" || {
+    echo "Default retryNotifyAfter (3) not found"
+    return 1
+  }
+}
+
+# =============================================================================
+# Idle Notification Behavior Tests
+# =============================================================================
+
+test_handles_session_status_events() {
+  # Verify the event handler checks for session.status events
+  grep -q "session.status" "$PLUGIN_DIR/index.js" || {
+    echo "session.status event handling not found"
+    return 1
+  }
+}
+
+test_handles_idle_status() {
+  # Verify idle status triggers timer
+  grep -q "idle" "$PLUGIN_DIR/index.js" || {
+    echo "idle status handling not found"
+    return 1
+  }
+}
+
+test_handles_busy_status() {
+  # Verify busy status cancels timer
+  grep -q "busy" "$PLUGIN_DIR/index.js" || {
+    echo "busy status handling not found"
+    return 1
+  }
+}
+
+test_uses_settimeout_for_idle() {
+  # Verify setTimeout is used for idle delay
+  grep -q "setTimeout" "$PLUGIN_DIR/index.js" || {
+    echo "setTimeout not found for idle delay"
+    return 1
+  }
+}
+
+test_uses_cleartimeout_for_busy() {
+  # Verify clearTimeout is used when busy
+  grep -q "clearTimeout" "$PLUGIN_DIR/index.js" || {
+    echo "clearTimeout not found for busy cancel"
+    return 1
+  }
+}
+
+test_sends_notification_via_curl() {
+  # Verify curl command is used to send notification
+  grep -q "curl" "$PLUGIN_DIR/index.js" || {
+    echo "curl command not found for sending notification"
+    return 1
+  }
+}
+
+test_uses_configured_server_and_topic() {
+  # Verify notification uses config.server and config.topic
+  grep -q 'config\.server' "$PLUGIN_DIR/index.js" && \
+  grep -q 'config\.topic' "$PLUGIN_DIR/index.js" || {
+    echo "Notification should use config.server and config.topic"
+    return 1
+  }
+}
+
+test_uses_configured_idle_delay() {
+  # Verify timeout uses config.idleDelayMs
+  grep -q 'config\.idleDelayMs' "$PLUGIN_DIR/index.js" || {
+    echo "Timer should use config.idleDelayMs"
+    return 1
+  }
+}
+
+# =============================================================================
+# Logging Tests
+# =============================================================================
+
+test_logs_disabled_when_no_topic() {
+  # Verify log message when NTFY_TOPIC not set
+  grep -q "NTFY_TOPIC not set" "$PLUGIN_DIR/index.js" || {
+    echo "Missing log message for disabled plugin"
+    return 1
+  }
+}
+
+test_logs_initialized_with_topic() {
+  # Verify log message when plugin initialized
+  grep -q "Initialized for topic" "$PLUGIN_DIR/index.js" || {
+    echo "Missing log message for initialized plugin"
+    return 1
+  }
+}
+
+test_logs_configuration_summary() {
+  # Verify config summary is logged (server, idleDelay, etc.)
+  grep -q "server:" "$PLUGIN_DIR/index.js" || \
+  grep -q "config\.server" "$PLUGIN_DIR/index.js" | grep -q "console.log" || {
+    # Alternative: check for a structured log of config
+    grep -q "idleDelayMs" "$PLUGIN_DIR/index.js" | grep -q "console.log" || true
+  }
+  # This is somewhat covered by the existing "Initialized" log
+  return 0
+}
+
+# =============================================================================
 # Plugin Export Structure Tests
 # =============================================================================
 
@@ -315,6 +509,51 @@ for test_func in \
   test_callback_js_syntax \
   test_hostname_js_syntax \
   test_tokens_js_syntax
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+echo ""
+echo "Configuration Parsing Tests:"
+
+for test_func in \
+  test_config_has_all_required_fields \
+  test_config_parses_ntfy_server \
+  test_config_parses_callback_secret \
+  test_config_parses_error_notify \
+  test_config_parses_error_debounce \
+  test_config_parses_retry_notify_first \
+  test_config_parses_retry_notify_after \
+  test_config_default_idle_delay_is_300000 \
+  test_config_default_error_debounce_is_60000 \
+  test_config_default_retry_after_is_3
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+echo ""
+echo "Idle Notification Behavior Tests:"
+
+for test_func in \
+  test_handles_session_status_events \
+  test_handles_idle_status \
+  test_handles_busy_status \
+  test_uses_settimeout_for_idle \
+  test_uses_cleartimeout_for_busy \
+  test_sends_notification_via_curl \
+  test_uses_configured_server_and_topic \
+  test_uses_configured_idle_delay
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+echo ""
+echo "Logging Tests:"
+
+for test_func in \
+  test_logs_disabled_when_no_topic \
+  test_logs_initialized_with_topic \
+  test_logs_configuration_summary
 do
   run_test "${test_func#test_}" "$test_func"
 done

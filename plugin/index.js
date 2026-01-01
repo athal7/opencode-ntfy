@@ -8,16 +8,32 @@
 // Configuration via environment variables:
 //   NTFY_TOPIC (required) - Your ntfy topic name
 //   NTFY_SERVER - ntfy server URL (default: https://ntfy.sh)
-//   NTFY_CALLBACK_HOST - Callback host for interactive notifications
+//   NTFY_CALLBACK_HOST - Callback host for action buttons (auto-discover)
 //   NTFY_CALLBACK_PORT - Callback server port (default: 4097)
-//   NTFY_IDLE_DELAY_MS - Idle notification delay (default: 300000)
+//   NTFY_CALLBACK_SECRET - HMAC secret for tokens (auto-generate)
+//   NTFY_IDLE_DELAY_MS - Idle notification delay in ms (default: 300000)
+//   NTFY_ERROR_NOTIFY - Enable error notifications (default: true)
+//   NTFY_ERROR_DEBOUNCE_MS - Error debounce window in ms (default: 60000)
+//   NTFY_RETRY_NOTIFY_FIRST - Notify on first retry (default: true)
+//   NTFY_RETRY_NOTIFY_AFTER - Also notify after N retries (default: 3)
+
+// Helper to parse boolean env vars
+const parseBool = (value, defaultValue) => {
+  if (value === undefined || value === '') return defaultValue
+  return value.toLowerCase() !== 'false' && value !== '0'
+}
 
 // Configuration from environment
 const config = {
   topic: process.env.NTFY_TOPIC,
   server: process.env.NTFY_SERVER || 'https://ntfy.sh',
   callbackPort: parseInt(process.env.NTFY_CALLBACK_PORT || '4097', 10),
+  callbackSecret: process.env.NTFY_CALLBACK_SECRET || null, // null = auto-generate
   idleDelayMs: parseInt(process.env.NTFY_IDLE_DELAY_MS || '300000', 10),
+  errorNotify: parseBool(process.env.NTFY_ERROR_NOTIFY, true),
+  errorDebounceMs: parseInt(process.env.NTFY_ERROR_DEBOUNCE_MS || '60000', 10),
+  retryNotifyFirst: parseBool(process.env.NTFY_RETRY_NOTIFY_FIRST, true),
+  retryNotifyAfter: parseInt(process.env.NTFY_RETRY_NOTIFY_AFTER || '3', 10),
 }
 
 export const Notify = async ({ $, client, directory }) => {
@@ -37,7 +53,22 @@ export const Notify = async ({ $, client, directory }) => {
 
   return {
     event: async ({ event }) => {
-      // TODO: Issue #2 - Handle session.status events (idle notifications)
+      if (event.type === 'session.status') {
+        const status = event.properties?.status?.type
+        if (status === 'idle' && !idleTimer) {
+          idleTimer = setTimeout(async () => {
+            try {
+              await $`curl -sf -d ${dir} -H "Title: OpenCode" ${config.server + '/' + config.topic}`.quiet()
+            } catch {
+              // Ignore notification failures
+            }
+            idleTimer = null
+          }, config.idleDelayMs)
+        } else if (status === 'busy' && idleTimer) {
+          clearTimeout(idleTimer)
+          idleTimer = null
+        }
+      }
       // TODO: Issue #3 - Handle permission.updated events
       // TODO: Issue #7 - Handle error and retry events
     },
