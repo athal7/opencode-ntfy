@@ -4,7 +4,7 @@
   "features": {
     "ghcr.io/devcontainers/features/git:1": {}
   },
-  "postCreateCommand": "npm install -g bats-core",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y bats",
   "customizations": {
     "vscode": {
       "extensions": [
