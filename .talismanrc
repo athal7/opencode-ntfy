@@ -1,0 +1,6 @@
+fileignoreconfig:
+- filename: install.sh
+  checksum: 4463aec6142d4f234ad7359e339c85873ecb6c4a7f54e47dabf0981e8fc18227
+- filename: test/test_helper.bash
+  checksum: f0af468cdbc917a8db548735d81ceadb673cc02c4654a49cba895eb469e9c50c
+version: "1.0"

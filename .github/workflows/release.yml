@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify JavaScript syntax
+        run: |
+          for file in plugin/*.js; do
+            echo "Checking $file..."
+            node --check "$file"
+          done
+
+      - name: Run tests
+        run: ./test/run_tests.bash
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release tarball
+        run: |
+          mkdir -p dist
+          tar -czvf dist/opencode-ntfy.tar.gz plugin/ install.sh README.md LICENSE
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/opencode-ntfy.tar.gz
+          generate_release_notes: true
