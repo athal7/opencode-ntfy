@@ -12,9 +12,35 @@
  * @param {string[]} [options.tags] - Emoji tags
  */
 export async function sendNotification({ server, topic, title, message, priority, tags }) {
-  // TODO: Implement in Issue #3
-  // Will use native fetch() to POST to ntfy server
-  throw new Error('Not implemented - see Issue #3')
+  const body = {
+    topic,
+    title,
+    message,
+  }
+
+  // Add optional fields only if provided
+  if (priority !== undefined) {
+    body.priority = priority
+  }
+  if (tags && tags.length > 0) {
+    body.tags = tags
+  }
+
+  try {
+    const response = await fetch(server, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      console.warn(`[opencode-ntfy] Notification failed: ${response.status} ${response.statusText}`)
+    }
+  } catch (error) {
+    console.warn(`[opencode-ntfy] Failed to send notification: ${error.message}`)
+  }
 }
 
 /**
@@ -23,8 +49,7 @@ export async function sendNotification({ server, topic, title, message, priority
  * @param {string} options.server - ntfy server URL
  * @param {string} options.topic - ntfy topic name
  * @param {string} options.callbackUrl - Base URL for callbacks
- * @param {string} options.sessionId - OpenCode session ID
- * @param {string} options.permissionId - Permission request ID
+ * @param {string} options.token - Signed token for callback authentication
  * @param {string} options.tool - Tool requesting permission
  * @param {string} options.description - Permission description
  */
@@ -32,12 +57,54 @@ export async function sendPermissionNotification({
   server,
   topic,
   callbackUrl,
-  sessionId,
-  permissionId,
+  token,
   tool,
   description,
 }) {
-  // TODO: Implement in Issue #3
-  // Will include action buttons: Allow Once, Allow Always, Reject
-  throw new Error('Not implemented - see Issue #3')
+  const body = {
+    topic,
+    title: 'OpenCode: Permission',
+    message: `${tool}: ${description}`,
+    priority: 4,
+    tags: ['lock'],
+    actions: [
+      {
+        action: 'http',
+        label: 'Allow Once',
+        url: `${callbackUrl}?token=${token}&response=once`,
+        method: 'POST',
+        clear: true,
+      },
+      {
+        action: 'http',
+        label: 'Allow Always',
+        url: `${callbackUrl}?token=${token}&response=always`,
+        method: 'POST',
+        clear: true,
+      },
+      {
+        action: 'http',
+        label: 'Reject',
+        url: `${callbackUrl}?token=${token}&response=reject`,
+        method: 'POST',
+        clear: true,
+      },
+    ],
+  }
+
+  try {
+    const response = await fetch(server, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      console.warn(`[opencode-ntfy] Permission notification failed: ${response.status} ${response.statusText}`)
+    }
+  } catch (error) {
+    console.warn(`[opencode-ntfy] Failed to send permission notification: ${error.message}`)
+  }
 }

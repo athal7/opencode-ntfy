@@ -237,10 +237,10 @@ test_uses_cleartimeout_for_busy() {
   }
 }
 
-test_sends_notification_via_curl() {
-  # Verify curl command is used to send notification
-  grep -q "curl" "$PLUGIN_DIR/index.js" || {
-    echo "curl command not found for sending notification"
+test_imports_send_notification_from_notifier() {
+  # Verify index.js imports sendNotification from notifier.js
+  grep -q "sendNotification" "$PLUGIN_DIR/index.js" || {
+    echo "sendNotification not imported/used in index.js"
     return 1
   }
 }
@@ -540,7 +540,7 @@ for test_func in \
   test_handles_busy_status \
   test_uses_settimeout_for_idle \
   test_uses_cleartimeout_for_busy \
-  test_sends_notification_via_curl \
+  test_imports_send_notification_from_notifier \
   test_uses_configured_server_and_topic \
   test_uses_configured_idle_delay
 do

@@ -17,6 +17,8 @@
 //   NTFY_RETRY_NOTIFY_FIRST - Notify on first retry (default: true)
 //   NTFY_RETRY_NOTIFY_AFTER - Also notify after N retries (default: 3)
 
+import { sendNotification } from './notifier.js'
+
 // Helper to parse boolean env vars
 const parseBool = (value, defaultValue) => {
   if (value === undefined || value === '') return defaultValue
@@ -57,11 +59,12 @@ export const Notify = async ({ $, client, directory }) => {
         const status = event.properties?.status?.type
         if (status === 'idle' && !idleTimer) {
           idleTimer = setTimeout(async () => {
-            try {
-              await $`curl -sf -d ${dir} -H "Title: OpenCode" ${config.server + '/' + config.topic}`.quiet()
-            } catch {
-              // Ignore notification failures
-            }
+            await sendNotification({
+              server: config.server,
+              topic: config.topic,
+              title: 'OpenCode',
+              message: dir,
+            })
             idleTimer = null
           }, config.idleDelayMs)
         } else if (status === 'busy' && idleTimer) {
