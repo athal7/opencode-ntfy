@@ -45,7 +45,7 @@ export function loadConfig() {
     if (process.env[envKey] !== undefined && process.env[envKey] !== '') {
       return process.env[envKey]
     }
-    if (fileConfig[fileKey] !== undefined) {
+    if (fileConfig[fileKey] !== undefined && fileConfig[fileKey] !== '') {
       return fileConfig[fileKey]
     }
     return defaultValue

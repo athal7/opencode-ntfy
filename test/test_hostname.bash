@@ -63,16 +63,16 @@ test_hostname_checks_env_var() {
   }
 }
 
-test_hostname_returns_null_when_not_set() {
-  grep -q "return null" "$PLUGIN_DIR/hostname.js" || {
-    echo "Return null when not configured not found in hostname.js"
+test_hostname_delegates_to_config() {
+  grep -q "import.*config.js\|from.*config" "$PLUGIN_DIR/hostname.js" || {
+    echo "hostname.js should delegate to config.js"
     return 1
   }
 }
 
-test_hostname_logs_host() {
-  grep -q "console.log.*host\|console.warn.*host\|console.log.*callback\|console.warn.*callback" "$PLUGIN_DIR/hostname.js" || {
-    echo "Logging of host not found in hostname.js"
+test_hostname_uses_load_config() {
+  grep -q "loadConfig" "$PLUGIN_DIR/hostname.js" || {
+    echo "loadConfig usage not found in hostname.js"
     return 1
   }
 }
@@ -166,8 +166,8 @@ echo "Implementation Tests:"
 
 for test_func in \
   test_hostname_checks_env_var \
-  test_hostname_returns_null_when_not_set \
-  test_hostname_logs_host
+  test_hostname_delegates_to_config \
+  test_hostname_uses_load_config
 do
   run_test "${test_func#test_}" "$test_func"
 done

@@ -2,21 +2,19 @@
 // Implements Issue #6: Host discovery module
 //
 // Note: This module is kept for backwards compatibility.
-// Prefer using config.js getCallbackHost() directly.
+// Prefer using config.js loadConfig().callbackHost directly.
+
+import { loadConfig, getCallbackHost as getHostFromConfig } from './config.js'
 
 /**
  * Get the callback host for ntfy action buttons
- * Uses NTFY_CALLBACK_HOST env var
+ * Uses NTFY_CALLBACK_HOST env var or opencode.json config
  *
  * @returns {string|null} The callback host, or null if not configured
  */
 export function getCallbackHost() {
-  if (process.env.NTFY_CALLBACK_HOST) {
-    console.log(`[opencode-ntfy] Using callback host: ${process.env.NTFY_CALLBACK_HOST}`)
-    return process.env.NTFY_CALLBACK_HOST
-  }
-
-  return null
+  const config = loadConfig()
+  return getHostFromConfig(config)
 }
 
 // Alias for backwards compatibility
