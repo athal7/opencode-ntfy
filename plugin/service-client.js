@@ -51,8 +51,6 @@ export async function connectToService(options) {
     let buffer = ''
     
     socket.on('connect', () => {
-      console.log(`[opencode-ntfy] Connected to service at ${socketPath}`)
-      
       // Register session
       sendMessage({
         type: 'register',
@@ -75,23 +73,17 @@ export async function connectToService(options) {
           const message = JSON.parse(line)
           handleMessage(message, resolve)
         } catch (error) {
-          console.warn(`[opencode-ntfy] Invalid message from service: ${error.message}`)
+          // Silently ignore invalid messages
         }
       }
     })
     
     socket.on('error', (err) => {
-      if (err.code === 'ECONNREFUSED' || err.code === 'ENOENT') {
-        console.warn(`[opencode-ntfy] Service not running (${err.code})`)
-      } else {
-        console.warn(`[opencode-ntfy] Socket error: ${err.message}`)
-      }
       socket = null
       resolve(false)
     })
     
     socket.on('close', () => {
-      console.log('[opencode-ntfy] Disconnected from service')
       socket = null
       
       // Reject any pending nonce requests
@@ -164,7 +156,6 @@ function sendMessage(message) {
 function handleMessage(message, connectResolve) {
   switch (message.type) {
     case 'registered':
-      console.log(`[opencode-ntfy] Session registered: ${message.sessionId}`)
       if (connectResolve) {
         connectResolve(true)
       }
@@ -183,12 +174,11 @@ function handleMessage(message, connectResolve) {
       // Forward to handler
       if (permissionHandler) {
         permissionHandler(message.permissionId, message.response)
-      } else {
-        console.warn(`[opencode-ntfy] Received permission response but no handler set`)
       }
       break
       
     default:
-      console.warn(`[opencode-ntfy] Unknown message type from service: ${message.type}`)
+      // Silently ignore unknown message types
+      break
   }
 }

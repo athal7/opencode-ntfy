@@ -98,13 +98,17 @@ test_send_notification_catches_errors() {
   }
 }
 
-test_send_notification_logs_errors() {
-  # Should log errors but not crash
-  grep -q "console\.\(error\|warn\|log\).*\(error\|Error\|fail\)" "$PLUGIN_DIR/notifier.js" || \
-  grep -q "\(error\|Error\|fail\).*console\.\(error\|warn\|log\)" "$PLUGIN_DIR/notifier.js" || {
-    echo "Error logging not found in notifier.js"
+test_send_notification_handles_errors_silently() {
+  # Should handle errors silently (no console output to avoid TUI interference)
+  grep -q "catch" "$PLUGIN_DIR/notifier.js" || {
+    echo "Error handling (catch) not found in notifier.js"
     return 1
   }
+  # Should NOT have console output
+  if grep -q "console\.\(error\|warn\|log\)" "$PLUGIN_DIR/notifier.js"; then
+    echo "Console output found - should be silent to avoid TUI interference"
+    return 1
+  fi
 }
 
 test_send_notification_supports_auth_token() {
@@ -287,7 +291,7 @@ for test_func in \
   test_send_notification_handles_optional_priority \
   test_send_notification_handles_optional_tags \
   test_send_notification_catches_errors \
-  test_send_notification_logs_errors \
+  test_send_notification_handles_errors_silently \
   test_send_notification_supports_auth_token \
   test_send_notification_uses_bearer_auth
 do

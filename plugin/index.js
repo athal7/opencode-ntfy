@@ -25,11 +25,8 @@ const config = loadConfig()
 
 export const Notify = async ({ $, client, directory }) => {
   if (!config.topic) {
-    console.log('[opencode-ntfy] No topic configured, plugin disabled')
     return {}
   }
-
-  console.log(`[opencode-ntfy] Initialized for topic: ${config.topic}`)
   
   // Session ID for this plugin instance
   const sessionId = randomUUID()
@@ -38,12 +35,8 @@ export const Notify = async ({ $, client, directory }) => {
   let serviceConnected = false
   
   if (config.callbackHost) {
-    console.log(`[opencode-ntfy] Interactive mode enabled (callback: ${config.callbackHost}:${config.callbackPort})`)
-    
     // Set up permission response handler
     setPermissionHandler(async (permissionId, response) => {
-      console.log(`[opencode-ntfy] Permission response received: ${permissionId} -> ${response}`)
-      
       // Map response to OpenCode permission action
       let action
       switch (response) {
@@ -57,7 +50,6 @@ export const Notify = async ({ $, client, directory }) => {
           action = 'deny'
           break
         default:
-          console.warn(`[opencode-ntfy] Unknown response type: ${response}`)
           return
       }
       
@@ -67,22 +59,13 @@ export const Notify = async ({ $, client, directory }) => {
           id: permissionId,
           action,
         })
-        console.log(`[opencode-ntfy] Permission ${permissionId} resolved with action: ${action}`)
       } catch (error) {
-        console.warn(`[opencode-ntfy] Failed to respond to permission ${permissionId}: ${error.message}`)
+        // Silently ignore - errors here shouldn't affect the user
       }
     })
     
     // Connect to service
     serviceConnected = await connectToService({ sessionId })
-    if (serviceConnected) {
-      console.log('[opencode-ntfy] Connected to callback service')
-    } else {
-      console.log('[opencode-ntfy] Callback service not running, interactive permissions disabled')
-      console.log('[opencode-ntfy] Start service with: launchctl load ~/Library/LaunchAgents/io.opencode.ntfy.plist')
-    }
-  } else {
-    console.log('[opencode-ntfy] Read-only mode (set callbackHost for interactive permissions)')
   }
 
   // Use directory from OpenCode (the actual repo), not process.cwd() (may be temp devcontainer dir)
@@ -90,17 +73,28 @@ export const Notify = async ({ $, client, directory }) => {
   let idleTimer = null
   let retryCount = 0
   let lastErrorTime = 0
+  let wasCanceled = false
 
   return {
     event: async ({ event }) => {
-      // Debug logging for event discovery (when NTFY_DEBUG is set)
-      if (process.env.NTFY_DEBUG) {
-        console.log(`[opencode-ntfy] Event: ${event.type}`, JSON.stringify(event.properties))
+      // Skip all notifications if session was canceled (except checking for canceled status itself)
+      if (wasCanceled && event.type !== 'session.status') {
+        return
       }
 
       // Handle session status events (idle, busy, retry notifications)
       if (event.type === 'session.status') {
         const status = event.properties?.status?.type
+        
+        // Handle canceled status - suppress all future notifications
+        if (status === 'canceled') {
+          wasCanceled = true
+          if (idleTimer) {
+            clearTimeout(idleTimer)
+            idleTimer = null
+          }
+          return
+        }
         
         // Handle retry status
         if (status === 'retry') {
@@ -120,16 +114,12 @@ export const Notify = async ({ $, client, directory }) => {
               tags: ['repeat'],
               authToken: config.authToken,
             })
-            console.log(`[opencode-ntfy] Retry notification sent (#${retryCount})`)
-          } else {
-            console.log(`[opencode-ntfy] Retry #${retryCount} suppressed (notifyFirst=${config.retryNotifyFirst}, notifyAfter=${config.retryNotifyAfter})`)
           }
           return
         }
         
         // Reset retry counter on any non-retry status
         if (retryCount > 0) {
-          console.log(`[opencode-ntfy] Retry counter reset (was ${retryCount})`)
           retryCount = 0
         }
         
@@ -138,6 +128,10 @@ export const Notify = async ({ $, client, directory }) => {
           idleTimer = setTimeout(async () => {
             // Clear timer reference immediately to prevent race conditions
             idleTimer = null
+            // Don't send notification if session was canceled
+            if (wasCanceled) {
+              return
+            }
             await sendNotification({
               server: config.server,
               topic: config.topic,
@@ -181,9 +175,6 @@ export const Notify = async ({ $, client, directory }) => {
             tags: ['warning'],
             authToken: config.authToken,
           })
-          console.log(`[opencode-ntfy] Error notification sent: ${errorMessage}`)
-        } else {
-          console.log(`[opencode-ntfy] Error debounced (${Math.round(timeSinceLastError / 1000)}s since last, window=${config.errorDebounceMs / 1000}s)`)
         }
       }
       
@@ -223,10 +214,8 @@ export const Notify = async ({ $, client, directory }) => {
             repoName,
             authToken: config.authToken,
           })
-          
-          console.log(`[opencode-ntfy] Permission notification sent for: ${tool}`)
         } catch (error) {
-          console.warn(`[opencode-ntfy] Failed to send permission notification: ${error.message}`)
+          // Silently ignore - errors here shouldn't affect the user
         }
       }
     },

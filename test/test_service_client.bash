@@ -104,11 +104,12 @@ test_service_client_handles_permission_response() {
   }
 }
 
-test_service_client_logs_with_prefix() {
-  grep -q "\[opencode-ntfy\]" "$PLUGIN_DIR/service-client.js" || {
-    echo "Logging prefix [opencode-ntfy] not found in service-client.js"
+test_service_client_no_console_output() {
+  # Should NOT have console output (silenced to avoid TUI interference)
+  if grep -q "console\.\(error\|warn\|log\)" "$PLUGIN_DIR/service-client.js"; then
+    echo "Console output found - should be silent to avoid TUI interference"
     return 1
-  }
+  fi
 }
 
 test_service_client_handles_connection_errors() {
@@ -363,7 +364,7 @@ for test_func in \
   test_service_client_handles_registration \
   test_service_client_handles_nonce_request \
   test_service_client_handles_permission_response \
-  test_service_client_logs_with_prefix \
+  test_service_client_no_console_output \
   test_service_client_handles_connection_errors
 do
   run_test "${test_func#test_}" "$test_func"

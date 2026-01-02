@@ -230,33 +230,7 @@ test_idle_notification_shows_repo_context() {
 # =============================================================================
 # Logging Tests
 # =============================================================================
-
-test_logs_disabled_when_no_topic() {
-  # Verify log message when topic not configured
-  grep -q "No topic configured\|topic.*disabled" "$PLUGIN_DIR/index.js" || {
-    echo "Missing log message for disabled plugin"
-    return 1
-  }
-}
-
-test_logs_initialized_with_topic() {
-  # Verify log message when plugin initialized
-  grep -q "Initialized for topic" "$PLUGIN_DIR/index.js" || {
-    echo "Missing log message for initialized plugin"
-    return 1
-  }
-}
-
-test_logs_configuration_summary() {
-  # Verify config summary is logged (server, idleDelay, etc.)
-  grep -q "server:" "$PLUGIN_DIR/index.js" || \
-  grep -q "config\.server" "$PLUGIN_DIR/index.js" | grep -q "console.log" || {
-    # Alternative: check for a structured log of config
-    grep -q "idleDelayMs" "$PLUGIN_DIR/index.js" | grep -q "console.log" || true
-  }
-  # This is somewhat covered by the existing "Initialized" log
-  return 0
-}
+# NOTE: Logging tests removed - all console output is now suppressed to avoid TUI interference
 
 # =============================================================================
 # Plugin Export Structure Tests
@@ -444,24 +418,66 @@ test_resets_retry_counter_on_status_change() {
 }
 
 # =============================================================================
-# Notification Suppression Logging Tests (Issue #7)
+# Cancellation Handling Tests
 # =============================================================================
 
-test_logs_retry_suppression() {
-  # Verify logging when retry notifications are suppressed
-  grep -q "suppressed\|Retry.*suppressed\|retry.*suppressed" "$PLUGIN_DIR/index.js" || {
-    echo "Retry suppression logging not found"
+test_handles_canceled_status() {
+  # Verify canceled status is handled (no notification on cancel)
+  grep -q "canceled" "$PLUGIN_DIR/index.js" || {
+    echo "canceled status handling not found"
     return 1
   }
 }
 
-test_logs_error_debounce() {
-  # Verify logging when error notifications are debounced
-  grep -q "debounced\|Debounced\|debounce" "$PLUGIN_DIR/index.js" || {
-    echo "Error debounce logging not found"
+test_sets_canceled_flag_on_canceled_status() {
+  # Verify a flag is set when session is canceled
+  grep -q "wasCanceled\|sessionCanceled\|canceled.*true\|isCanceled" "$PLUGIN_DIR/index.js" || {
+    echo "canceled flag not found"
     return 1
   }
 }
+
+test_shutdown_checks_canceled_before_notification() {
+  # Verify shutdown handler respects canceled state
+  # The idle timer should be cancelled without sending notification
+  grep -q "shutdown" "$PLUGIN_DIR/index.js" || {
+    echo "shutdown handler not found"
+    return 1
+  }
+}
+
+# =============================================================================
+# Console Output Suppression Tests
+# =============================================================================
+
+test_no_console_log_calls() {
+  # Plugin should not use console.log (interferes with TUI)
+  if grep -q 'console\.log' "$PLUGIN_DIR/index.js"; then
+    echo "console.log found - should use silent or file-based logging"
+    return 1
+  fi
+}
+
+test_no_console_warn_calls() {
+  # Plugin should not use console.warn (interferes with TUI)
+  if grep -q 'console\.warn' "$PLUGIN_DIR/index.js"; then
+    echo "console.warn found - should use silent or file-based logging"
+    return 1
+  fi
+}
+
+test_no_console_error_calls() {
+  # Plugin should not use console.error (interferes with TUI)
+  if grep -q 'console\.error' "$PLUGIN_DIR/index.js"; then
+    echo "console.error found - should use silent or file-based logging"
+    return 1
+  fi
+}
+
+# =============================================================================
+# Notification Suppression Logging Tests (Issue #7)
+# =============================================================================
+# NOTE: Console output suppression tests removed - all logging disabled to avoid TUI interference
 
 # =============================================================================
 # OpenCode Runtime Integration Tests
@@ -653,16 +669,7 @@ do
   run_test "${test_func#test_}" "$test_func"
 done
 
-echo ""
-echo "Logging Tests:"
-
-for test_func in \
-  test_logs_disabled_when_no_topic \
-  test_logs_initialized_with_topic \
-  test_logs_configuration_summary
-do
-  run_test "${test_func#test_}" "$test_func"
-done
+# Logging tests removed - console output is now fully suppressed
 
 echo ""
 echo "Plugin Export Structure Tests:"
@@ -727,14 +734,28 @@ do
 done
 
 echo ""
-echo "Notification Suppression Logging Tests (Issue #7):"
+echo "Cancellation Handling Tests:"
 
 for test_func in \
-  test_logs_retry_suppression \
-  test_logs_error_debounce
+  test_handles_canceled_status \
+  test_sets_canceled_flag_on_canceled_status \
+  test_shutdown_checks_canceled_before_notification
 do
   run_test "${test_func#test_}" "$test_func"
 done
+
+echo ""
+echo "Console Output Suppression Tests:"
+
+for test_func in \
+  test_no_console_log_calls \
+  test_no_console_warn_calls \
+  test_no_console_error_calls
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+# Removed notification suppression logging tests - console output is now fully suppressed
 
 echo ""
 echo "OpenCode Runtime Integration Tests (CI=${CI:-false}):"

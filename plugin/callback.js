@@ -58,7 +58,6 @@ export function startCallbackServer(port, onPermissionResponse) {
         res.writeHead(200, { 'Content-Type': 'text/plain' })
         res.end('OK')
       } catch (error) {
-        console.warn(`[opencode-ntfy] Error handling permission response: ${error.message}`)
         res.writeHead(500, { 'Content-Type': 'text/plain' })
         res.end('Internal server error')
       }
@@ -71,12 +70,10 @@ export function startCallbackServer(port, onPermissionResponse) {
   })
 
   server.on('error', (err) => {
-    console.error(`[opencode-ntfy] Callback server error: ${err.message}`)
+    // Silently ignore - errors here shouldn't affect the user
   })
 
-  server.listen(port, () => {
-    console.log(`[opencode-ntfy] Callback server listening on port ${port}`)
-  })
+  server.listen(port)
 
   return server
 }
