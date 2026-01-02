@@ -5,7 +5,7 @@
 // - Session goes idle after delay
 // - Errors or retries occur
 //
-// Configuration via opencode.json "ntfy" key or environment variables.
+// Configuration via ~/.config/opencode-ntfy/config.json or environment variables.
 // See README.md for full configuration options.
 
 import { basename } from 'path'
