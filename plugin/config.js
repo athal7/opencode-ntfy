@@ -28,11 +28,8 @@ export function loadConfig() {
     try {
       const content = readFileSync(CONFIG_PATH, 'utf8')
       fileConfig = JSON.parse(content)
-      if (Object.keys(fileConfig).length > 0) {
-        console.log('[opencode-ntfy] Loaded config from ~/.config/opencode-ntfy/config.json')
-      }
     } catch (err) {
-      console.warn(`[opencode-ntfy] Failed to parse config.json: ${err.message}`)
+      // Silently ignore parse errors
     }
   }
 
@@ -84,10 +81,5 @@ export function loadConfig() {
  * @returns {string|null} The callback host, or null if not configured
  */
 export function getCallbackHost(config) {
-  if (config.callbackHost) {
-    console.log(`[opencode-ntfy] Using callback host: ${config.callbackHost}`)
-    return config.callbackHost
-  }
-
-  return null
+  return config.callbackHost || null
 }

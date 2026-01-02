@@ -63,17 +63,14 @@ export async function sendNotification({ server, topic, title, message, priority
   }
 
   try {
-    const response = await fetch(server, {
+    await fetch(server, {
       method: 'POST',
       headers: buildHeaders(authToken),
       body: JSON.stringify(body),
     })
-
-    if (!response.ok) {
-      console.warn(`[opencode-ntfy] Notification failed: ${response.status} ${response.statusText}`)
-    }
+    // Silently ignore errors - notifications are best-effort
   } catch (error) {
-    console.warn(`[opencode-ntfy] Failed to send notification: ${error.message}`)
+    // Silently ignore - errors here shouldn't affect the user
   }
 }
 
@@ -132,16 +129,13 @@ export async function sendPermissionNotification({
   }
 
   try {
-    const response = await fetch(server, {
+    await fetch(server, {
       method: 'POST',
       headers: buildHeaders(authToken),
       body: JSON.stringify(body),
     })
-
-    if (!response.ok) {
-      console.warn(`[opencode-ntfy] Permission notification failed: ${response.status} ${response.statusText}`)
-    }
+    // Silently ignore errors - notifications are best-effort
   } catch (error) {
-    console.warn(`[opencode-ntfy] Failed to send permission notification: ${error.message}`)
+    // Silently ignore - errors here shouldn't affect the user
   }
 }

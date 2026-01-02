@@ -118,11 +118,12 @@ test_callback_returns_404_for_unknown_routes() {
   }
 }
 
-test_callback_logs_startup() {
-  grep -q "console.log.*listen\|listening\|started\|Callback server" "$PLUGIN_DIR/callback.js" || {
-    echo "Startup logging not found in callback.js"
+test_callback_no_console_output() {
+  # Should NOT have console output (silenced to avoid TUI interference)
+  if grep -q "console\.\(error\|warn\|log\)" "$PLUGIN_DIR/callback.js"; then
+    echo "Console output found - should be silent to avoid TUI interference"
     return 1
-  }
+  fi
 }
 
 test_callback_not_implemented_removed() {
@@ -498,7 +499,7 @@ for test_func in \
   test_callback_returns_401_for_invalid_nonce \
   test_callback_returns_400_for_invalid_response \
   test_callback_returns_404_for_unknown_routes \
-  test_callback_logs_startup \
+  test_callback_no_console_output \
   test_callback_not_implemented_removed
 do
   run_test "${test_func#test_}" "$test_func"
