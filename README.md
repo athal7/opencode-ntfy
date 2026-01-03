@@ -4,10 +4,10 @@ ntfy notification plugin for [OpenCode](https://github.com/sst/opencode) with in
 
 ## Features
 
-- **Idle notifications** - Get notified when OpenCode has been waiting for input, with an "Open Session" button to jump directly to the web UI
+- **Idle notifications** - Get notified when OpenCode has been waiting for input, with an "Open Session" button to view and reply
 - **Interactive permissions** - Respond to permission requests directly from your phone via ntfy action buttons
 - **Error & retry alerts** - Stay informed when something needs attention
-- **Remote access** - Built-in proxy enables accessing OpenCode's web UI from your phone via Tailscale
+- **New session page** - Start new OpenCode sessions from your phone with project, model, and agent selection
 
 ## Installation
 
@@ -74,6 +74,7 @@ Create `~/.config/opencode-ntfy/config.json`:
 | `token` | *(none)* | ntfy access token for protected topics |
 | `callbackHost` | *(none)* | Hostname for callbacks and proxy (e.g., Tailscale hostname) |
 | `callbackPort` | `4097` | Callback service port |
+| `callbackHttps` | `false` | Use HTTPS via Tailscale Serve (recommended) |
 | `idleDelayMs` | `300000` | Idle notification delay in ms (default: 5 minutes) |
 | `idleNotify` | `true` | Enable idle notifications |
 | `errorNotify` | `true` | Enable error notifications |
@@ -92,6 +93,7 @@ Environment variables override config file values:
 | `NTFY_TOKEN` | `token` |
 | `NTFY_CALLBACK_HOST` | `callbackHost` |
 | `NTFY_CALLBACK_PORT` | `callbackPort` |
+| `NTFY_CALLBACK_HTTPS` | `callbackHttps` |
 | `NTFY_IDLE_DELAY_MS` | `idleDelayMs` |
 | `NTFY_IDLE_NOTIFY` | `idleNotify` |
 | `NTFY_ERROR_NOTIFY` | `errorNotify` |
@@ -101,10 +103,7 @@ Environment variables override config file values:
 
 ## Callback Service
 
-The callback service is a persistent background process that:
-
-1. **Receives permission responses** from ntfy action buttons
-2. **Proxies requests** to OpenCode's web UI for the "Open Session" button
+The callback service is a persistent background process that receives permission responses from ntfy action buttons and forwards them to OpenCode.
 
 ### Starting the Service
 
@@ -148,18 +147,64 @@ The callback service listens on port 4097 (configurable). For remote access:
 2. **Tailscale users**: Use your machine's Tailscale hostname (e.g., `macbook.tail1234.ts.net`)
 3. Ensure the port is not blocked by firewalls
 
+### HTTPS with Tailscale Serve (Recommended)
+
+For better iOS Safari compatibility, use Tailscale Serve to add HTTPS:
+
+```bash
+# Enable Tailscale Serve (one-time setup, persists across reboots)
+tailscale serve --bg 4097
+```
+
+Then add to your config:
+
+```json
+{
+  "callbackHttps": true
+}
+```
+
+This uses Tailscale's automatic Let's Encrypt certificates. Your service remains HTTP locally, but is accessible via HTTPS at `https://your-machine.tailnet.ts.net/`.
+
+**Note:** This only exposes to your tailnet (your devices), NOT the public internet. Tailscale Funnel (which does expose publicly) is NOT used.
+
 ## Features in Detail
 
 ### Idle Notifications with Open Session
 
-When OpenCode goes idle (waiting for input), you'll receive a notification with an **Open Session** button. Tapping it opens the OpenCode web UI directly on your phone.
+When OpenCode goes idle (waiting for input), you'll receive a notification with an **Open Session** button. Tapping it opens a **mobile-friendly session UI** that shows the last agent message and lets you send replies.
 
-This works by proxying requests through the callback service:
-- OpenCode's web UI binds to `localhost` only
-- The callback service proxies requests from your remote device to localhost
-- URL format: `http://{callbackHost}:{callbackPort}/p/{opencodePort}/{path}`
+**Requirements for Open Session:**
+- Callback service must be running: `brew services start opencode-ntfy`
+- Your phone must be on the same Tailscale network
+- `callbackHost` must be set to your Tailscale hostname
 
-**Security note**: The proxy forwards requests to any localhost port in the range 1024-65535. This is secure when used with Tailscale (which provides authentication), but be aware that any service on localhost in that port range is accessible through the proxy.
+The mobile UI is served by the callback service and proxies requests to OpenCode, so OpenCode doesn't need to be exposed directly.
+
+### New Session Page
+
+Start new OpenCode sessions from your phone by bookmarking:
+
+```
+http://{callbackHost}:{callbackPort}/new
+```
+
+The new session page includes:
+- **Project selector** - Choose from available OpenCode projects
+- **Agent selector** - Pick which agent to use (build, plan, etc.)
+- **Message input** - Type your initial prompt
+
+After starting a session, you'll receive an idle notification when OpenCode is ready for more input.
+
+**Requirements:**
+- Callback service must be running
+- OpenCode must be running (the page proxies to it)
+- Your phone must be on the same Tailscale network
+
+**URL Options:**
+- `/new` - Uses default port 4096
+- `/new?port=4096` - Specify OpenCode port explicitly
+- `/new/4096` - Alternative port-specific URL
 
 ### Interactive Permissions
 
@@ -200,26 +245,33 @@ Requires `callbackHost` to be configured and the callback service running.
 
 ### Open Session button not working
 
-1. Ensure callback service is running
+1. Ensure callback service is running: `brew services info opencode-ntfy`
 2. Verify you can reach `http://{callbackHost}:{callbackPort}/health` from your phone
-3. Check that OpenCode's web UI is running (it starts automatically with OpenCode)
+3. Check that OpenCode is running (the callback service proxies to it)
 
 ## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
 │  OpenCode   │────▶│ ntfy Plugin  │────▶│  ntfy.sh    │
-│  (local)    │     │  (in-proc)   │     │  (cloud)    │
+│ (localhost) │     │  (in-proc)   │     │  (cloud)    │
 └─────────────┘     └──────────────┘     └─────────────┘
+       ▲                   │                    │
        │                   │                    │
-       │                   │                    │
-       ▼                   ▼                    ▼
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Web UI     │◀────│  Callback    │◀────│  Phone      │
-│  :4096      │     │  Service     │     │  (ntfy app) │
-│             │     │  :4097       │     │             │
-└─────────────┘     └──────────────┘     └─────────────┘
-                    (proxy + IPC)
+       │                   ▼                    ▼
+       │            ┌──────────────┐     ┌─────────────┐
+       │◀───────────│  Callback    │◀────│  Phone      │
+       │            │  Service     │     │  (ntfy app) │
+       │            │  :4097       │     │             │
+       │            └──────────────┘     └─────────────┘
+       │            (permissions IPC +
+       │             mobile UI proxy)
+       │
+       └── proxied via Tailscale
+
+- "Open Session" opens a mobile-friendly UI served by the callback service
+- The mobile UI proxies API requests to OpenCode (localhost only)
+- Permission responses go through the callback service
 ```
 
 ## Development
