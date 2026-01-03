@@ -857,18 +857,19 @@ test_builds_open_session_url() {
   }
 }
 
-test_uses_proxy_url_format() {
-  # URL should use proxy format: /p/{port}/... to go through service proxy
-  grep -q "/p/" "$PLUGIN_DIR/index.js" || {
-    echo "Proxy URL format /p/ not found in index.js"
+test_uses_mobile_ui_url() {
+  # URL should point to the mobile-friendly UI served by the callback service
+  # Format: /m/{opencodePort}/{repoName}/session/{sessionId}
+  grep -q '/m/' "$PLUGIN_DIR/index.js" || {
+    echo "Mobile UI URL format (/m/) not found in index.js"
     return 1
   }
 }
 
-test_uses_callback_port_for_proxy() {
-  # Should use callbackPort (service port) for proxy, not opencode port
-  grep -q "callbackPort" "$PLUGIN_DIR/index.js" || {
-    echo "callbackPort not used for proxy URL"
+test_uses_callback_host_for_session_url() {
+  # Should use callbackHost (Tailscale hostname) for the session URL
+  grep -q "callbackHost" "$PLUGIN_DIR/index.js" || {
+    echo "callbackHost not used for session URL"
     return 1
   }
 }
@@ -882,8 +883,8 @@ for test_func in \
   test_handles_session_created_event \
   test_idle_notification_can_include_actions \
   test_builds_open_session_url \
-  test_uses_proxy_url_format \
-  test_uses_callback_port_for_proxy
+  test_uses_mobile_ui_url \
+  test_uses_callback_host_for_session_url
 do
   run_test "${test_func#test_}" "$test_func"
 done

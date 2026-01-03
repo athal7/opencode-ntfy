@@ -143,18 +143,22 @@ export const Notify = async ({ $, client, directory, serverUrl }) => {
             }
             
             // Build "Open Session" action if serverUrl and callbackHost are available
-            // URL goes through service proxy: http://{callbackHost}:{callbackPort}/p/{opencodePort}/{path}
-            // This allows remote access since OpenCode binds to localhost only
+            // URL points to the mobile-friendly UI served by the callback service
+            // The mobile UI proxies requests to OpenCode's API
             let actions
             if (serverUrl && config.callbackHost && currentSessionId) {
               try {
                 const opencodeUrl = new URL(serverUrl)
                 const opencodePort = opencodeUrl.port || (opencodeUrl.protocol === 'https:' ? 443 : 80)
-                const sessionUrl = `http://${config.callbackHost}:${config.callbackPort}/p/${opencodePort}/${repoName}/session/${currentSessionId}`
+                // Mobile URL format: /m/{opencodePort}/{repoName}/session/{sessionId}
+                // Use HTTPS (via Tailscale Serve) when callbackHttps is enabled
+                const protocol = config.callbackHttps ? 'https' : 'http'
+                const portSuffix = config.callbackHttps ? '' : `:${config.callbackPort}`
+                const mobileUrl = `${protocol}://${config.callbackHost}${portSuffix}/m/${opencodePort}/${repoName}/session/${currentSessionId}`
                 actions = [{
                   action: 'view',
                   label: 'Open Session',
-                  url: sessionUrl,
+                  url: mobileUrl,
                   clear: true,
                 }]
               } catch {
@@ -231,8 +235,10 @@ export const Notify = async ({ $, client, directory, serverUrl }) => {
           // Request nonce from service
           const nonce = await requestNonce(permissionId)
           
-          // Build callback URL
-          const callbackUrl = `http://${config.callbackHost}:${config.callbackPort}/callback`
+          // Build callback URL (use HTTPS via Tailscale Serve when configured)
+          const protocol = config.callbackHttps ? 'https' : 'http'
+          const portSuffix = config.callbackHttps ? '' : `:${config.callbackPort}`
+          const callbackUrl = `${protocol}://${config.callbackHost}${portSuffix}/callback`
           
           // Send permission notification with action buttons
           await sendPermissionNotification({

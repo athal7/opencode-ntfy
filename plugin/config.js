@@ -67,6 +67,7 @@ export function loadConfig() {
     authToken: get('NTFY_TOKEN', 'token', null),
     callbackHost: get('NTFY_CALLBACK_HOST', 'callbackHost', null),
     callbackPort: getInt('NTFY_CALLBACK_PORT', 'callbackPort', 4097),
+    callbackHttps: getBool('NTFY_CALLBACK_HTTPS', 'callbackHttps', false),
     idleDelayMs: getInt('NTFY_IDLE_DELAY_MS', 'idleDelayMs', 300000),
     errorNotify: getBool('NTFY_ERROR_NOTIFY', 'errorNotify', true),
     errorDebounceMs: getInt('NTFY_ERROR_DEBOUNCE_MS', 'errorDebounceMs', 60000),

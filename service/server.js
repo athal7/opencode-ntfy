@@ -6,18 +6,39 @@
 // - Unix socket IPC for plugin communication
 // - Nonce management for permission requests
 // - Session registration and response forwarding
-// - HTTP/WebSocket proxy for OpenCode web UI access (Issue #30)
 
 import { createServer as createHttpServer } from 'http'
 import { createServer as createNetServer } from 'net'
 import { randomUUID } from 'crypto'
-import { existsSync, unlinkSync, realpathSync } from 'fs'
+import { existsSync, unlinkSync, realpathSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { createProxyServer } from 'httpxy'
+import { homedir } from 'os'
+import { join } from 'path'
 
 // Default configuration
 const DEFAULT_HTTP_PORT = 4097
 const DEFAULT_SOCKET_PATH = '/tmp/opencode-ntfy.sock'
+const CONFIG_PATH = join(homedir(), '.config', 'opencode-ntfy', 'config.json')
+
+/**
+ * Load callback config from config file
+ * @returns {Object} Config with callbackHttps and callbackHost
+ */
+function loadCallbackConfig() {
+  try {
+    if (existsSync(CONFIG_PATH)) {
+      const content = readFileSync(CONFIG_PATH, 'utf8')
+      const config = JSON.parse(content)
+      return {
+        callbackHttps: config.callbackHttps === true,
+        callbackHost: config.callbackHost || null,
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+  return { callbackHttps: false, callbackHost: null }
+}
 
 // Nonce storage: nonce -> { sessionId, permissionId, createdAt }
 const nonces = new Map()
@@ -28,6 +49,13 @@ const sessions = new Map()
 
 // Valid response types
 const VALID_RESPONSES = ['once', 'always', 'reject']
+
+// Allowed OpenCode port range (OpenCode uses ports like 7596, 7829, etc.)
+const MIN_OPENCODE_PORT = 1024
+const MAX_OPENCODE_PORT = 65535
+
+// Maximum request body size (1MB)
+const MAX_BODY_SIZE = 1024 * 1024
 
 /**
  * Generate a simple HTML response page
@@ -59,6 +87,767 @@ function htmlResponse(title, message, success) {
     <div class="message">${message}</div>
     <div class="hint">You can close this tab</div>
   </div>
+</body>
+</html>`
+}
+
+/**
+ * HTML-escape a string for safe embedding in HTML
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string
+ */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+/**
+ * Validate port is in allowed range
+ * @param {number} port - Port to validate
+ * @returns {boolean} True if valid
+ */
+function isValidPort(port) {
+  return Number.isInteger(port) && port >= MIN_OPENCODE_PORT && port <= MAX_OPENCODE_PORT
+}
+
+/**
+ * Generate the mobile session UI HTML page
+ * @param {Object} params - Page parameters
+ * @param {string} params.repoName - Repository name
+ * @param {string} params.sessionId - Session ID
+ * @param {number} params.opencodePort - OpenCode server port
+ * @returns {string} HTML content
+ */
+function mobileSessionPage({ repoName, sessionId, opencodePort }) {
+  // Escape values for safe HTML embedding
+  const safeRepoName = escapeHtml(repoName)
+  const safeSessionId = escapeHtml(sessionId)
+  
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>${safeRepoName} - OpenCode</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      background: #161b22;
+      padding: 12px 16px;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-icon {
+      width: 20px;
+      height: 20px;
+      background: #238636;
+      border-radius: 4px;
+    }
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .header-status {
+      margin-left: auto;
+      font-size: 12px;
+      color: #7d8590;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      overflow: hidden;
+    }
+    .message-container {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 16px;
+    }
+    .message {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .message-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #7d8590;
+    }
+    .message-role {
+      background: #238636;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .message-content {
+      font-size: 15px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .message-loading {
+      text-align: center;
+      color: #7d8590;
+      padding: 40px;
+    }
+    .message-error {
+      background: #3d1e20;
+      border-color: #f85149;
+      color: #f85149;
+    }
+    .input-container {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .input-wrapper {
+      display: flex;
+      gap: 8px;
+    }
+    textarea {
+      flex: 1;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-family: inherit;
+      font-size: 15px;
+      padding: 10px 12px;
+      resize: none;
+      min-height: 44px;
+      max-height: 120px;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #238636;
+    }
+    textarea::placeholder {
+      color: #7d8590;
+    }
+    button {
+      background: #238636;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 20px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover {
+      background: #2ea043;
+    }
+    button:disabled {
+      background: #21262d;
+      color: #7d8590;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon"></div>
+    <div class="header-title">${safeRepoName}</div>
+    <div class="header-status" id="status">Loading...</div>
+  </div>
+  
+  <div class="main">
+    <div class="message-container">
+      <div class="message" id="message">
+        <div class="message-loading">Loading session...</div>
+      </div>
+    </div>
+    
+    <div class="input-container">
+      <div class="input-wrapper">
+        <textarea id="input" placeholder="Type a message..." rows="1"></textarea>
+        <button id="send" disabled>Send</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api/' + ${opencodePort};
+    const SESSION_ID = '${safeSessionId}';
+    
+    const messageEl = document.getElementById('message');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const statusEl = document.getElementById('status');
+    
+    let isSending = false;
+    
+    // Auto-resize textarea
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+      sendBtn.disabled = !inputEl.value.trim() || isSending;
+    });
+    
+    // Send message
+    async function sendMessage() {
+      const content = inputEl.value.trim();
+      if (!content || isSending) return;
+      
+      isSending = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending...';
+      
+      try {
+        const res = await fetch(API_BASE + '/session/' + SESSION_ID + '/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        });
+        
+        if (!res.ok) throw new Error('Failed to send');
+        
+        inputEl.value = '';
+        inputEl.style.height = 'auto';
+        statusEl.textContent = 'Sent! Refresh to see response.';
+        
+        // Show user message immediately
+        messageEl.innerHTML = \`
+          <div class="message-header">
+            <span class="message-role" style="background:#1f6feb">You</span>
+            <span>Just now</span>
+          </div>
+          <div class="message-content">\${escapeHtml(content)}</div>
+        \`;
+      } catch (err) {
+        statusEl.textContent = 'Error sending message';
+        messageEl.classList.add('message-error');
+      } finally {
+        isSending = false;
+        sendBtn.disabled = !inputEl.value.trim();
+        sendBtn.textContent = 'Send';
+      }
+    }
+    
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+    
+    // Load session
+    async function loadSession() {
+      try {
+        const res = await fetch(API_BASE + '/session/' + SESSION_ID);
+        if (!res.ok) throw new Error('Session not found');
+        
+        const session = await res.json();
+        const messages = session.messages || [];
+        
+        // Find last assistant message
+        let lastAssistant = null;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'assistant') {
+            lastAssistant = messages[i];
+            break;
+          }
+        }
+        
+        if (lastAssistant) {
+          // Extract text content from message parts
+          let content = '';
+          if (lastAssistant.parts) {
+            for (const part of lastAssistant.parts) {
+              if (part.type === 'text') {
+                content += part.text;
+              }
+            }
+          } else if (lastAssistant.content) {
+            content = typeof lastAssistant.content === 'string' 
+              ? lastAssistant.content 
+              : JSON.stringify(lastAssistant.content);
+          }
+          
+          messageEl.innerHTML = \`
+            <div class="message-header">
+              <span class="message-role">Assistant</span>
+            </div>
+            <div class="message-content">\${escapeHtml(content || 'No content')}</div>
+          \`;
+          statusEl.textContent = 'Ready';
+        } else {
+          messageEl.innerHTML = '<div class="message-loading">No messages yet</div>';
+          statusEl.textContent = 'New session';
+        }
+        
+        sendBtn.disabled = !inputEl.value.trim();
+      } catch (err) {
+        messageEl.innerHTML = '<div class="message-loading">Could not load session</div>';
+        messageEl.classList.add('message-error');
+        statusEl.textContent = 'Error';
+      }
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    loadSession();
+  </script>
+</body>
+</html>`
+}
+
+/**
+ * Generate the new session page HTML
+ * @param {Object} params - Page parameters
+ * @param {number} params.opencodePort - OpenCode server port
+ * @returns {string} HTML content
+ */
+function newSessionPage({ opencodePort }) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>New Session - OpenCode</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      background: #161b22;
+      padding: 12px 16px;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-icon {
+      width: 20px;
+      height: 20px;
+      background: #238636;
+      border-radius: 4px;
+    }
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .header-status {
+      margin-left: auto;
+      font-size: 12px;
+      color: #7d8590;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #7d8590;
+    }
+    select {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-family: inherit;
+      font-size: 15px;
+      padding: 10px 12px;
+      width: 100%;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237d8590' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6l3.5 4 3.5-4z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+    select:focus {
+      outline: none;
+      border-color: #238636;
+    }
+    select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    textarea {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-family: inherit;
+      font-size: 15px;
+      padding: 10px 12px;
+      resize: vertical;
+      min-height: 120px;
+      width: 100%;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #238636;
+    }
+    textarea::placeholder {
+      color: #7d8590;
+    }
+    button {
+      background: #238636;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 12px 20px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:hover {
+      background: #2ea043;
+    }
+    button:disabled {
+      background: #21262d;
+      color: #7d8590;
+      cursor: not-allowed;
+    }
+    .error {
+      background: #3d1e20;
+      border: 1px solid #f85149;
+      border-radius: 6px;
+      color: #f85149;
+      padding: 12px;
+      font-size: 14px;
+      display: none;
+    }
+    .success {
+      background: #1e3d20;
+      border: 1px solid #238636;
+      border-radius: 6px;
+      color: #3fb950;
+      padding: 12px;
+      font-size: 14px;
+      display: none;
+      text-align: center;
+    }
+    .loading {
+      color: #7d8590;
+      font-size: 14px;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon"></div>
+    <div class="header-title">New Session</div>
+    <div class="header-status" id="status">Loading...</div>
+  </div>
+  
+  <div class="main">
+    <div class="error" id="error"></div>
+    <div class="success" id="success">Session started! You can close this page.</div>
+    
+    <div class="form-group">
+      <label for="project">Project Directory</label>
+      <select id="project" disabled>
+        <option value="">Loading projects...</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="model">Model</label>
+      <select id="model" disabled>
+        <option value="">Loading models...</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="agent">Agent</label>
+      <select id="agent" disabled>
+        <option value="">Loading agents...</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="message">Message</label>
+      <textarea id="message" placeholder="What would you like to do?" rows="4"></textarea>
+    </div>
+    
+    <button id="submit" disabled>Start Session</button>
+  </div>
+
+  <script>
+    const API_BASE = '/api/${opencodePort}';
+    
+    const projectEl = document.getElementById('project');
+    const modelEl = document.getElementById('model');
+    const agentEl = document.getElementById('agent');
+    const messageEl = document.getElementById('message');
+    const submitBtn = document.getElementById('submit');
+    const statusEl = document.getElementById('status');
+    const errorEl = document.getElementById('error');
+    const successEl = document.getElementById('success');
+    
+    let projects = [];
+    let models = [];
+    let agents = [];
+    
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+      successEl.style.display = 'none';
+    }
+    
+    function showSuccess() {
+      successEl.style.display = 'block';
+      errorEl.style.display = 'none';
+    }
+    
+    function hideMessages() {
+      errorEl.style.display = 'none';
+      successEl.style.display = 'none';
+    }
+    
+    function updateSubmitButton() {
+      const hasProject = projectEl.value;
+      const hasMessage = messageEl.value.trim();
+      submitBtn.disabled = !hasProject || !hasMessage;
+    }
+    
+    async function loadProjects() {
+      try {
+        const res = await fetch(API_BASE + '/project');
+        if (!res.ok) throw new Error('Failed to load projects');
+        projects = await res.json();
+        
+        // Filter projects:
+        // - Exclude .cache/devcontainer-clones (temporary workspaces)
+        // - Only show projects under home directory OR global "/"
+        const home = '/Users/';
+        const filtered = projects.filter(p => {
+          if (p.worktree === '/') return true; // Keep global project
+          if (p.worktree.includes('/.cache/')) return false;
+          if (!p.worktree.startsWith(home)) return false;
+          return true;
+        });
+        
+        projectEl.innerHTML = '<option value="">Select a project...</option>';
+        filtered.forEach(p => {
+          let name = p.worktree.split('/').pop() || p.worktree;
+          const isGlobal = p.worktree === '/';
+          if (isGlobal) name = '~ (global)';
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = name;
+          opt.title = p.worktree;
+          if (isGlobal) opt.selected = true;
+          projectEl.appendChild(opt);
+        });
+        projectEl.disabled = false;
+      } catch (err) {
+        projectEl.innerHTML = '<option value="">Failed to load</option>';
+        showError('Could not load projects. Is OpenCode running?');
+      }
+    }
+    
+    async function loadModels() {
+      try {
+        // Load favorites and provider data in parallel
+        const [favRes, provRes] = await Promise.all([
+          fetch('/favorites'),
+          fetch(API_BASE + '/provider')
+        ]);
+        
+        const favorites = favRes.ok ? await favRes.json() : [];
+        if (!provRes.ok) throw new Error('Failed to load providers');
+        const data = await provRes.json();
+        
+        const allProviders = data.all || [];
+        
+        modelEl.innerHTML = '';
+        
+        // Add favorite models first
+        if (favorites.length > 0) {
+          favorites.forEach(fav => {
+            const provider = allProviders.find(p => p.id === fav.providerID);
+            if (!provider || !provider.models) return;
+            const model = provider.models[fav.modelID];
+            if (!model) return;
+            
+            const opt = document.createElement('option');
+            opt.value = fav.providerID + '/' + fav.modelID;
+            opt.textContent = model.name || fav.modelID;
+            modelEl.appendChild(opt);
+          });
+        } else {
+          // Fallback if no favorites
+          modelEl.innerHTML = '<option value="">Default model</option>';
+        }
+        
+        modelEl.disabled = false;
+      } catch (err) {
+        modelEl.innerHTML = '<option value="">Default model</option>';
+        modelEl.disabled = false;
+      }
+    }
+    
+    async function loadAgents() {
+      try {
+        const res = await fetch(API_BASE + '/agent');
+        if (!res.ok) throw new Error('Failed to load agents');
+        agents = await res.json();
+        
+        // Filter to user-facing agents:
+        // - mode === 'primary' (not subagents)
+        // - has a description (excludes internal agents like compaction, title, summary)
+        const primaryAgents = agents.filter(a => a.mode === 'primary' && a.description);
+        
+        agentEl.innerHTML = '';
+        primaryAgents.forEach(a => {
+          const opt = document.createElement('option');
+          opt.value = a.name;
+          opt.textContent = a.name;
+          if (a.name === 'plan') opt.selected = true;
+          agentEl.appendChild(opt);
+        });
+        agentEl.disabled = false;
+      } catch (err) {
+        agentEl.innerHTML = '<option value="build">build</option>';
+        agentEl.disabled = false;
+      }
+    }
+    
+    async function startSession() {
+      hideMessages();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Starting...';
+      statusEl.textContent = 'Creating session...';
+      
+      try {
+        // Create session
+        const sessionRes = await fetch(API_BASE + '/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectID: projectEl.value })
+        });
+        
+        if (!sessionRes.ok) {
+          const errText = await sessionRes.text();
+          throw new Error('Create session failed: ' + sessionRes.status + ' ' + errText.substring(0, 100));
+        }
+        const session = await sessionRes.json();
+        
+        statusEl.textContent = 'Sending message...';
+        
+        // Parse model selection (format: "providerId/modelId")
+        const modelValue = modelEl.value;
+        const modelParts = modelValue ? modelValue.split('/') : [];
+        const modelConfig = modelParts.length >= 2 ? {
+          providerID: modelParts[0],
+          modelID: modelParts.slice(1).join('/')
+        } : null;
+        
+        // Send message with fire-and-forget approach
+        // The message API waits for the LLM response which can take minutes
+        // We use a short timeout to detect if the request was accepted
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const messageBody = {
+          agent: agentEl.value,
+          parts: [{ type: 'text', text: messageEl.value.trim() }]
+        };
+        if (modelConfig) {
+          messageBody.model = modelConfig;
+        }
+        
+        try {
+          const msgRes = await fetch(API_BASE + '/session/' + session.id + '/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messageBody),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          
+          if (!msgRes.ok) {
+            const errText = await msgRes.text();
+            throw new Error('Send message failed: ' + msgRes.status + ' ' + errText.substring(0, 100));
+          }
+        } catch (fetchErr) {
+          clearTimeout(timeoutId);
+          // AbortError means the request was sent but we timed out waiting
+          // This is expected - the session is running, we just didn't wait for completion
+          if (fetchErr.name !== 'AbortError') {
+            throw fetchErr;
+          }
+        }
+        
+        showSuccess();
+        statusEl.textContent = 'Session started!';
+        messageEl.value = '';
+        updateSubmitButton();
+        
+      } catch (err) {
+        // Provide detailed error info for debugging
+        const errMsg = err.message || String(err);
+        const errName = err.name || 'Unknown';
+        showError(errName + ': ' + errMsg);
+        statusEl.textContent = 'Error';
+        console.error('Session start error:', err);
+      } finally {
+        submitBtn.textContent = 'Start Session';
+        updateSubmitButton();
+      }
+    }
+    
+    projectEl.addEventListener('change', updateSubmitButton);
+    messageEl.addEventListener('input', updateSubmitButton);
+    submitBtn.addEventListener('click', startSession);
+    
+    // Load data
+    Promise.all([loadProjects(), loadModels(), loadAgents()]).then(() => {
+      statusEl.textContent = 'Ready';
+      updateSubmitButton();
+    });
+  </script>
 </body>
 </html>`
 }
@@ -161,25 +950,66 @@ function sendToSession(sessionId, permissionId, response) {
   }
 }
 
-// Create proxy server for forwarding requests to localhost
-const proxy = createProxyServer({})
-
 /**
- * Parse proxy route and extract target port and path
- * @param {string} pathname - URL pathname (e.g., /p/4096/repo/session/123)
- * @returns {{ port: number, path: string } | null} Parsed route or null if invalid
+ * Proxy a request to the OpenCode server
+ * @param {http.IncomingMessage} req - Incoming request
+ * @param {http.ServerResponse} res - Outgoing response
+ * @param {number} targetPort - Target port for OpenCode server
+ * @param {string} targetPath - Target path on the OpenCode server
  */
-function parseProxyRoute(pathname) {
-  const match = pathname.match(/^\/p\/(\d+)(\/.*)$/)
-  if (!match) return null
+async function proxyToOpenCode(req, res, targetPort, targetPath) {
+  // Validate port to prevent localhost port scanning
+  if (!isValidPort(targetPort)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Invalid port' }))
+    return
+  }
   
-  const port = parseInt(match[1], 10)
-  const path = match[2]
-  
-  // Validate port range (1024-65535 for non-privileged ports)
-  if (port < 1024 || port > 65535) return null
-  
-  return { port, path }
+  try {
+    // Read request body for POST/PUT requests with size limit
+    let body = null
+    if (req.method === 'POST' || req.method === 'PUT') {
+      const chunks = []
+      let totalSize = 0
+      for await (const chunk of req) {
+        totalSize += chunk.length
+        if (totalSize > MAX_BODY_SIZE) {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Request body too large' }))
+          return
+        }
+        chunks.push(chunk)
+      }
+      body = Buffer.concat(chunks)
+    }
+    
+    // Make request to OpenCode
+    const targetUrl = `http://localhost:${targetPort}${targetPath}`
+    const fetchOptions = {
+      method: req.method,
+      headers: {
+        'Content-Type': req.headers['content-type'] || 'application/json',
+        'Accept': 'application/json',
+      },
+    }
+    if (body) {
+      fetchOptions.body = body
+    }
+    
+    const proxyRes = await fetch(targetUrl, fetchOptions)
+    
+    // Forward response
+    const responseBody = await proxyRes.text()
+    res.writeHead(proxyRes.status, {
+      'Content-Type': proxyRes.headers.get('content-type') || 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    })
+    res.end(responseBody)
+  } catch (error) {
+    console.error(`[opencode-ntfy] Proxy error: ${error.message}`)
+    res.writeHead(502, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Failed to connect to OpenCode server' }))
+  }
 }
 
 /**
@@ -188,13 +1018,71 @@ function parseProxyRoute(pathname) {
  * @returns {http.Server} The HTTP server
  */
 function createCallbackServer(port) {
+  const callbackConfig = loadCallbackConfig()
+  
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`)
+    
+    // Redirect to HTTPS if configured and request came directly to HTTP port
+    // (Tailscale Serve handles HTTPS termination and forwards to us)
+    // We detect direct HTTP access by checking the X-Forwarded-Proto header
+    // which Tailscale Serve sets when proxying
+    // Exception: /health endpoint always works on HTTP for monitoring
+    if (callbackConfig.callbackHttps && callbackConfig.callbackHost && url.pathname !== '/health') {
+      const forwardedProto = req.headers['x-forwarded-proto']
+      // If no forwarded proto header, request came directly to HTTP port
+      if (!forwardedProto) {
+        const httpsUrl = `https://${callbackConfig.callbackHost}${url.pathname}${url.search}`
+        res.writeHead(301, { 'Location': httpsUrl })
+        res.end()
+        return
+      }
+    }
+    
+    // OPTIONS - CORS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
+      })
+      res.end()
+      return
+    }
     
     // GET /health - Health check
     if (req.method === 'GET' && url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' })
       res.end('OK')
+      return
+    }
+    
+    // GET /favorites - Get favorite models from local OpenCode state
+    if (req.method === 'GET' && url.pathname === '/favorites') {
+      try {
+        const modelFile = join(homedir(), '.local', 'state', 'opencode', 'model.json')
+        if (existsSync(modelFile)) {
+          const data = JSON.parse(readFileSync(modelFile, 'utf8'))
+          res.writeHead(200, { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          })
+          res.end(JSON.stringify(data.favorite || []))
+        } else {
+          res.writeHead(200, { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          })
+          res.end('[]')
+        }
+      } catch (err) {
+        res.writeHead(200, { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        })
+        res.end('[]')
+      }
       return
     }
     
@@ -239,44 +1127,121 @@ function createCallbackServer(port) {
       return
     }
     
-    // Proxy route: /p/{port}/{path} - Forward to localhost:{port}/{path}
-    // This enables remote access to OpenCode web UI via Tailscale
-    const proxyRoute = parseProxyRoute(url.pathname)
-    if (proxyRoute) {
-      const target = `http://localhost:${proxyRoute.port}`
-      req.url = proxyRoute.path + url.search
+    // GET /m/:port/:repo/session/:sessionId - Mobile session UI
+    const mobileMatch = url.pathname.match(/^\/m\/(\d+)\/([^/]+)\/session\/([^/]+)$/)
+    if (req.method === 'GET' && mobileMatch) {
+      const [, portStr, repoName, sessionId] = mobileMatch
+      const opencodePort = parseInt(portStr, 10)
       
-      try {
-        await proxy.web(req, res, { target })
-      } catch (error) {
-        console.error(`[opencode-ntfy] Proxy error: ${error.message}`)
-        res.writeHead(502, { 'Content-Type': 'text/plain' })
-        res.end('Proxy error: ' + error.message)
+      // Validate port to prevent abuse
+      if (!isValidPort(opencodePort)) {
+        res.writeHead(400, { 'Content-Type': 'text/html' })
+        res.end(htmlResponse('Error', 'Invalid port', false))
+        return
       }
+      
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(mobileSessionPage({
+        repoName: decodeURIComponent(repoName),
+        sessionId,
+        opencodePort,
+      }))
+      return
+    }
+    
+    // API Proxy routes - /api/:port/session/:sessionId
+    const apiSessionMatch = url.pathname.match(/^\/api\/(\d+)\/session\/([^/]+)$/)
+    if (apiSessionMatch) {
+      const [, opencodePort, sessionId] = apiSessionMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), `/session/${sessionId}`)
+      return
+    }
+    
+    // API Proxy routes - /api/:port/session/:sessionId/chat
+    const apiChatMatch = url.pathname.match(/^\/api\/(\d+)\/session\/([^/]+)\/chat$/)
+    if (apiChatMatch) {
+      const [, opencodePort, sessionId] = apiChatMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), `/session/${sessionId}/chat`)
+      return
+    }
+    
+    // API Proxy routes - /api/:port/session/:sessionId/message (for new session page)
+    const apiMessageMatch = url.pathname.match(/^\/api\/(\d+)\/session\/([^/]+)\/message$/)
+    if (apiMessageMatch) {
+      const [, opencodePort, sessionId] = apiMessageMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), `/session/${sessionId}/message`)
+      return
+    }
+    
+    // API Proxy routes - /api/:port/session (create session)
+    const apiSessionCreateMatch = url.pathname.match(/^\/api\/(\d+)\/session$/)
+    if (apiSessionCreateMatch) {
+      const [, opencodePort] = apiSessionCreateMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), '/session')
+      return
+    }
+    
+    // API Proxy routes - /api/:port/project (list projects)
+    const apiProjectMatch = url.pathname.match(/^\/api\/(\d+)\/project$/)
+    if (apiProjectMatch) {
+      const [, opencodePort] = apiProjectMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), '/project')
+      return
+    }
+    
+    // API Proxy routes - /api/:port/agent (list agents)
+    const apiAgentMatch = url.pathname.match(/^\/api\/(\d+)\/agent$/)
+    if (apiAgentMatch) {
+      const [, opencodePort] = apiAgentMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), '/agent')
+      return
+    }
+    
+    // API Proxy routes - /api/:port/provider (list providers/models)
+    const apiProviderMatch = url.pathname.match(/^\/api\/(\d+)\/provider$/)
+    if (apiProviderMatch) {
+      const [, opencodePort] = apiProviderMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), '/provider')
+      return
+    }
+    
+    // GET /new/:port - New session page
+    const newSessionMatch = url.pathname.match(/^\/new\/(\d+)$/)
+    if (req.method === 'GET' && newSessionMatch) {
+      const [, portStr] = newSessionMatch
+      const opencodePort = parseInt(portStr, 10)
+      
+      if (!isValidPort(opencodePort)) {
+        res.writeHead(400, { 'Content-Type': 'text/html' })
+        res.end(htmlResponse('Error', 'Invalid port', false))
+        return
+      }
+      
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(newSessionPage({ opencodePort }))
+      return
+    }
+    
+    // GET /new - New session page (default port from query param or config)
+    if (req.method === 'GET' && url.pathname === '/new') {
+      // Try to get port from query param, default to common OpenCode ports
+      const portParam = url.searchParams.get('port')
+      const opencodePort = portParam ? parseInt(portParam, 10) : 4096
+      
+      if (!isValidPort(opencodePort)) {
+        res.writeHead(400, { 'Content-Type': 'text/html' })
+        res.end(htmlResponse('Error', 'Invalid port', false))
+        return
+      }
+      
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(newSessionPage({ opencodePort }))
       return
     }
     
     // Unknown route
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not found')
-  })
-  
-  // Handle WebSocket upgrade for proxy routes
-  server.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url, `http://localhost:${port}`)
-    const proxyRoute = parseProxyRoute(url.pathname)
-    
-    if (proxyRoute) {
-      const target = `http://localhost:${proxyRoute.port}`
-      req.url = proxyRoute.path + url.search
-      
-      proxy.ws(req, socket, head, { target }).catch((error) => {
-        console.error(`[opencode-ntfy] WebSocket proxy error: ${error.message}`)
-        socket.destroy()
-      })
-    } else {
-      socket.destroy()
-    }
   })
   
   server.on('error', (err) => {
