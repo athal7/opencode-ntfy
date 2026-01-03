@@ -237,10 +237,17 @@ test_idle_notification_shows_repo_context() {
 # =============================================================================
 
 test_index_exports_notify() {
-  grep -q "export const Notify" "$PLUGIN_DIR/index.js" || {
-    echo "Notify export not found in index.js"
+  # Plugin should only use default export to prevent double-loading by OpenCode
+  # (Issue #34: Having both named and default export caused plugin to load twice)
+  grep -q "export default Notify" "$PLUGIN_DIR/index.js" || {
+    echo "Default Notify export not found in index.js"
     return 1
   }
+  # Ensure named export is NOT present (would cause double-loading)
+  if grep -q "export const Notify" "$PLUGIN_DIR/index.js"; then
+    echo "Named export 'export const Notify' found - should only use default export"
+    return 1
+  fi
 }
 
 test_index_has_default_export() {
