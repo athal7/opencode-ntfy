@@ -104,6 +104,20 @@ test_service_logs_with_prefix() {
   }
 }
 
+test_service_has_proxy_route() {
+  grep -q "/p/" "$SERVICE_DIR/server.js" || {
+    echo "Proxy route /p/ not found in server.js"
+    return 1
+  }
+}
+
+test_service_uses_httpxy() {
+  grep -q "httpxy\|createProxyServer" "$SERVICE_DIR/server.js" || {
+    echo "httpxy proxy not found in server.js"
+    return 1
+  }
+}
+
 # =============================================================================
 # Functional Tests (requires Node.js)
 # =============================================================================
@@ -222,6 +236,63 @@ test_service_returns_401_for_invalid_nonce() {
   fi
 }
 
+test_service_proxy_forwards_to_localhost() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { createServer } from 'http';
+    import { startService, stopService } from './service/server.js';
+    
+    // Start a simple target server
+    const targetServer = createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('proxied:' + req.url);
+    });
+    await new Promise(resolve => targetServer.listen(0, resolve));
+    const targetPort = targetServer.address().port;
+    
+    // Start the proxy service
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    const service = await startService(config);
+    const proxyPort = service.httpServer.address().port;
+    
+    // Make a request through the proxy
+    const res = await fetch('http://localhost:' + proxyPort + '/p/' + targetPort + '/test/path');
+    const body = await res.text();
+    
+    // Cleanup
+    await stopService(service);
+    await new Promise(resolve => targetServer.close(resolve));
+    
+    if (res.status !== 200) {
+      console.log('FAIL: Expected 200, got ' + res.status);
+      process.exit(1);
+    }
+    
+    if (!body.includes('proxied:/test/path')) {
+      console.log('FAIL: Expected proxied response, got: ' + body);
+      process.exit(1);
+    }
+    
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
 # =============================================================================
 # Run Tests
 # =============================================================================
@@ -255,7 +326,9 @@ for test_func in \
   test_service_has_callback_endpoint \
   test_service_handles_session_registration \
   test_service_handles_nonce_creation \
-  test_service_logs_with_prefix
+  test_service_logs_with_prefix \
+  test_service_has_proxy_route \
+  test_service_uses_httpxy
 do
   run_test "${test_func#test_}" "$test_func"
 done
@@ -266,7 +339,8 @@ echo "Functional Tests:"
 for test_func in \
   test_service_starts_and_stops \
   test_service_health_endpoint_returns_200 \
-  test_service_returns_401_for_invalid_nonce
+  test_service_returns_401_for_invalid_nonce \
+  test_service_proxy_forwards_to_localhost
 do
   run_test "${test_func#test_}" "$test_func"
 done

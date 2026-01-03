@@ -143,13 +143,14 @@ export const Notify = async ({ $, client, directory, serverUrl }) => {
             }
             
             // Build "Open Session" action if serverUrl and callbackHost are available
-            // URL format matches OpenCode web UI: {origin}/{directory}/session/{sessionId}
+            // URL goes through service proxy: http://{callbackHost}:{callbackPort}/p/{opencodePort}/{path}
+            // This allows remote access since OpenCode binds to localhost only
             let actions
             if (serverUrl && config.callbackHost && currentSessionId) {
               try {
-                const url = new URL(serverUrl)
-                url.hostname = config.callbackHost
-                const sessionUrl = `${url.origin}/${repoName}/session/${currentSessionId}`
+                const opencodeUrl = new URL(serverUrl)
+                const opencodePort = opencodeUrl.port || (opencodeUrl.protocol === 'https:' ? 443 : 80)
+                const sessionUrl = `http://${config.callbackHost}:${config.callbackPort}/p/${opencodePort}/${repoName}/session/${currentSessionId}`
                 actions = [{
                   action: 'view',
                   label: 'Open Session',

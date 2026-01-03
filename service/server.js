@@ -6,12 +6,14 @@
 // - Unix socket IPC for plugin communication
 // - Nonce management for permission requests
 // - Session registration and response forwarding
+// - HTTP/WebSocket proxy for OpenCode web UI access (Issue #30)
 
 import { createServer as createHttpServer } from 'http'
 import { createServer as createNetServer } from 'net'
 import { randomUUID } from 'crypto'
 import { existsSync, unlinkSync, realpathSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { createProxyServer } from 'httpxy'
 
 // Default configuration
 const DEFAULT_HTTP_PORT = 4097
@@ -159,13 +161,34 @@ function sendToSession(sessionId, permissionId, response) {
   }
 }
 
+// Create proxy server for forwarding requests to localhost
+const proxy = createProxyServer({})
+
+/**
+ * Parse proxy route and extract target port and path
+ * @param {string} pathname - URL pathname (e.g., /p/4096/repo/session/123)
+ * @returns {{ port: number, path: string } | null} Parsed route or null if invalid
+ */
+function parseProxyRoute(pathname) {
+  const match = pathname.match(/^\/p\/(\d+)(\/.*)$/)
+  if (!match) return null
+  
+  const port = parseInt(match[1], 10)
+  const path = match[2]
+  
+  // Validate port range (1024-65535 for non-privileged ports)
+  if (port < 1024 || port > 65535) return null
+  
+  return { port, path }
+}
+
 /**
  * Create the HTTP callback server
  * @param {number} port - Port to listen on
  * @returns {http.Server} The HTTP server
  */
 function createCallbackServer(port) {
-  const server = createHttpServer((req, res) => {
+  const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`)
     
     // GET /health - Health check
@@ -216,9 +239,44 @@ function createCallbackServer(port) {
       return
     }
     
+    // Proxy route: /p/{port}/{path} - Forward to localhost:{port}/{path}
+    // This enables remote access to OpenCode web UI via Tailscale
+    const proxyRoute = parseProxyRoute(url.pathname)
+    if (proxyRoute) {
+      const target = `http://localhost:${proxyRoute.port}`
+      req.url = proxyRoute.path + url.search
+      
+      try {
+        await proxy.web(req, res, { target })
+      } catch (error) {
+        console.error(`[opencode-ntfy] Proxy error: ${error.message}`)
+        res.writeHead(502, { 'Content-Type': 'text/plain' })
+        res.end('Proxy error: ' + error.message)
+      }
+      return
+    }
+    
     // Unknown route
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not found')
+  })
+  
+  // Handle WebSocket upgrade for proxy routes
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url, `http://localhost:${port}`)
+    const proxyRoute = parseProxyRoute(url.pathname)
+    
+    if (proxyRoute) {
+      const target = `http://localhost:${proxyRoute.port}`
+      req.url = proxyRoute.path + url.search
+      
+      proxy.ws(req, socket, head, { target }).catch((error) => {
+        console.error(`[opencode-ntfy] WebSocket proxy error: ${error.message}`)
+        socket.destroy()
+      })
+    } else {
+      socket.destroy()
+    }
   })
   
   server.on('error', (err) => {
