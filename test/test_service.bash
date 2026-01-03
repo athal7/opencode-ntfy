@@ -646,6 +646,69 @@ test_service_escapes_html_in_reponame() {
   fi
 }
 
+test_service_markdown_renderer_escapes_xss() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    const port = service.httpServer.address().port;
+    
+    const res = await fetch('http://localhost:' + port + '/m/4096/myrepo/session/ses_123');
+    const html = await res.text();
+    
+    // Extract the renderMarkdown function and test it
+    // The function should escape HTML before applying markdown
+    // We verify by checking the escapeHtml is called before regex replacements
+    
+    // Check that escapeHtml is defined and called first in renderMarkdown
+    if (!html.includes('function escapeHtml')) {
+      console.log('FAIL: escapeHtml function not found');
+      process.exit(1);
+    }
+    
+    if (!html.includes('function renderMarkdown')) {
+      console.log('FAIL: renderMarkdown function not found');
+      process.exit(1);
+    }
+    
+    // Verify escapeHtml is called at the start of renderMarkdown
+    // The pattern should be: escapeHtml(text) before any .replace() calls
+    const renderMarkdownMatch = html.match(/function renderMarkdown[\\s\\S]*?escapeHtml\\(text\\)/);
+    if (!renderMarkdownMatch) {
+      console.log('FAIL: renderMarkdown should call escapeHtml(text) before processing');
+      process.exit(1);
+    }
+    
+    // Verify the escapeHtml function uses safe DOM-based escaping
+    if (!html.includes('textContent') || !html.includes('innerHTML')) {
+      console.log('FAIL: escapeHtml should use DOM-based escaping (textContent -> innerHTML)');
+      process.exit(1);
+    }
+    
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
 test_service_handles_cors_preflight() {
   if ! command -v node &>/dev/null; then
     echo "SKIP: node not available"
@@ -1054,6 +1117,7 @@ for test_func in \
   test_service_rejects_privileged_ports \
   test_service_rejects_low_ports \
   test_service_escapes_html_in_reponame \
+  test_service_markdown_renderer_escapes_xss \
   test_service_handles_cors_preflight \
   test_service_rejects_large_request_body
 do
