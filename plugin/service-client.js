@@ -17,6 +17,8 @@ let socket = null
 let sessionId = null
 let permissionHandler = null
 let pendingNonceRequests = new Map() // permissionId -> resolve/reject
+let pendingIdleChecks = new Map() // requestId -> { repoName, resolve } (Issue #34)
+let idleRequestCounter = 0 // Counter for unique request IDs
 
 /**
  * Check if connected to the service
@@ -91,6 +93,12 @@ export async function connectToService(options) {
         reject(new Error('Service connection closed'))
       }
       pendingNonceRequests.clear()
+      
+      // Resolve pending idle checks with true (allow notification as fallback)
+      for (const [requestId, { resolve }] of pendingIdleChecks) {
+        resolve(true)
+      }
+      pendingIdleChecks.clear()
     })
   })
 }
@@ -139,6 +147,45 @@ export function requestNonce(permissionId) {
 }
 
 /**
+ * Check if an idle notification should be sent (Issue #34)
+ * This deduplicates idle notifications across multiple sessions for the same repo.
+ * 
+ * @param {string} repoName - Repository name
+ * @param {number} [dedupeMs] - Optional deduplication window in ms
+ * @returns {Promise<boolean>} True if notification should be sent, false if duplicate
+ */
+export function checkIdle(repoName, dedupeMs) {
+  return new Promise((resolve) => {
+    // If not connected, allow notification (fallback behavior)
+    if (!isConnected()) {
+      resolve(true)
+      return
+    }
+    
+    // Generate unique request ID to handle concurrent calls for same repo
+    const requestId = `${repoName}-${++idleRequestCounter}`
+    
+    // Store pending request with unique ID
+    pendingIdleChecks.set(requestId, { resolve })
+    
+    // Send request with requestId for response correlation
+    const message = { type: 'check_idle', repoName, requestId }
+    if (dedupeMs !== undefined) {
+      message.dedupeMs = dedupeMs
+    }
+    sendMessage(message)
+    
+    // Timeout after 5 seconds - allow notification on timeout
+    setTimeout(() => {
+      if (pendingIdleChecks.has(requestId)) {
+        pendingIdleChecks.delete(requestId)
+        resolve(true) // Allow notification if service doesn't respond
+      }
+    }, 5000)
+  })
+}
+
+/**
  * Send a message to the service
  * @param {Object} message - Message to send
  */
@@ -174,6 +221,15 @@ function handleMessage(message, connectResolve) {
       // Forward to handler
       if (permissionHandler) {
         permissionHandler(message.permissionId, message.response)
+      }
+      break
+      
+    case 'idle_check_result':
+      // Issue #34: Resolve pending idle check using requestId for correlation
+      const pendingIdle = pendingIdleChecks.get(message.requestId)
+      if (pendingIdle) {
+        pendingIdleChecks.delete(message.requestId)
+        pendingIdle.resolve(message.shouldSend)
       }
       break
       

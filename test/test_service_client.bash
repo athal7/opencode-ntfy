@@ -65,6 +65,14 @@ test_service_client_exports_is_connected() {
   }
 }
 
+test_service_client_exports_check_idle() {
+  # Issue #34: Service client should export checkIdle for deduplication
+  grep -q "export.*function checkIdle\|export.*checkIdle" "$PLUGIN_DIR/service-client.js" || {
+    echo "checkIdle export not found in service-client.js"
+    return 1
+  }
+}
+
 # =============================================================================
 # Implementation Tests
 # =============================================================================
@@ -115,6 +123,14 @@ test_service_client_no_console_output() {
 test_service_client_handles_connection_errors() {
   grep -q "error\|ECONNREFUSED\|ENOENT" "$PLUGIN_DIR/service-client.js" || {
     echo "Connection error handling not found in service-client.js"
+    return 1
+  }
+}
+
+test_service_client_handles_check_idle_message() {
+  # Issue #34: Service client should handle check_idle message type
+  grep -q "check_idle\|idle_check" "$PLUGIN_DIR/service-client.js" || {
+    echo "check_idle message handling not found in service-client.js"
     return 1
   }
 }
@@ -331,6 +347,172 @@ test_service_client_handles_service_not_running() {
 }
 
 # =============================================================================
+# Issue #34: Idle Notification Deduplication Functional Tests
+# =============================================================================
+
+test_service_client_check_idle_returns_boolean() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { connectToService, disconnectFromService, checkIdle } from './plugin/service-client.js';
+    
+    const socketPath = '/tmp/opencode-ntfy-test-' + process.pid + '.sock';
+    const service = await startService({ httpPort: 0, socketPath });
+    
+    await connectToService({ sessionId: 'test-session', socketPath });
+    
+    const shouldSend = await checkIdle('test-repo');
+    
+    if (typeof shouldSend !== 'boolean') {
+      console.log('FAIL: checkIdle should return boolean, got: ' + typeof shouldSend);
+      process.exit(1);
+    }
+    
+    if (shouldSend !== true) {
+      console.log('FAIL: First idle check should return true');
+      process.exit(1);
+    }
+    
+    await disconnectFromService();
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_client_check_idle_returns_false_for_duplicate() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { connectToService, disconnectFromService, checkIdle } from './plugin/service-client.js';
+    
+    const socketPath = '/tmp/opencode-ntfy-test-' + process.pid + '.sock';
+    const service = await startService({ httpPort: 0, socketPath });
+    
+    await connectToService({ sessionId: 'test-session', socketPath });
+    
+    // First check - allowed
+    await checkIdle('test-repo');
+    
+    // Second check - duplicate, should be suppressed
+    const shouldSend = await checkIdle('test-repo');
+    
+    if (shouldSend !== false) {
+      console.log('FAIL: Duplicate idle check should return false');
+      process.exit(1);
+    }
+    
+    await disconnectFromService();
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_client_check_idle_returns_true_when_disconnected() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { checkIdle, isConnected } from './plugin/service-client.js';
+    
+    // Not connected - checkIdle should return true (fallback behavior)
+    if (isConnected()) {
+      console.log('FAIL: Should not be connected');
+      process.exit(1);
+    }
+    
+    const shouldSend = await checkIdle('test-repo');
+    
+    if (shouldSend !== true) {
+      console.log('FAIL: checkIdle should return true when not connected');
+      process.exit(1);
+    }
+    
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_client_check_idle_concurrent_calls() {
+  # Issue #34: Test that concurrent checkIdle calls for same repo don't lose requests
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { connectToService, disconnectFromService, checkIdle } from './plugin/service-client.js';
+    
+    const socketPath = '/tmp/opencode-ntfy-test-' + process.pid + '.sock';
+    const service = await startService({ httpPort: 0, socketPath });
+    
+    await connectToService({ sessionId: 'test-session', socketPath });
+    
+    // Make concurrent calls - both should complete (not hang)
+    const results = await Promise.all([
+      checkIdle('test-repo'),
+      checkIdle('test-repo'),
+    ]);
+    
+    // First should be true, second should be false (suppressed)
+    // But the key test is that both complete without hanging
+    if (typeof results[0] !== 'boolean' || typeof results[1] !== 'boolean') {
+      console.log('FAIL: Both calls should return booleans, got: ' + results);
+      process.exit(1);
+    }
+    
+    await disconnectFromService();
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+# =============================================================================
 # Run Tests
 # =============================================================================
 
@@ -350,7 +532,8 @@ for test_func in \
   test_service_client_exports_connect \
   test_service_client_exports_disconnect \
   test_service_client_exports_request_nonce \
-  test_service_client_exports_is_connected
+  test_service_client_exports_is_connected \
+  test_service_client_exports_check_idle
 do
   run_test "${test_func#test_}" "$test_func"
 done
@@ -365,7 +548,8 @@ for test_func in \
   test_service_client_handles_nonce_request \
   test_service_client_handles_permission_response \
   test_service_client_no_console_output \
-  test_service_client_handles_connection_errors
+  test_service_client_handles_connection_errors \
+  test_service_client_handles_check_idle_message
 do
   run_test "${test_func#test_}" "$test_func"
 done
@@ -378,6 +562,18 @@ for test_func in \
   test_service_client_requests_nonce \
   test_service_client_receives_permission_response \
   test_service_client_handles_service_not_running
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+echo ""
+echo "Idle Deduplication Tests (Issue #34):"
+
+for test_func in \
+  test_service_client_check_idle_returns_boolean \
+  test_service_client_check_idle_returns_false_for_duplicate \
+  test_service_client_check_idle_returns_true_when_disconnected \
+  test_service_client_check_idle_concurrent_calls
 do
   run_test "${test_func#test_}" "$test_func"
 done

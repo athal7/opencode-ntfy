@@ -1046,6 +1046,394 @@ test_service_rejects_large_request_body() {
 }
 
 # =============================================================================
+# Idle Notification Deduplication Tests (Issue #34)
+# =============================================================================
+
+test_service_handles_check_idle_message() {
+  # Service should handle check_idle message type from plugins
+  grep -q "check_idle" "$SERVICE_DIR/server.js" || {
+    echo "check_idle message type not found in server.js"
+    return 1
+  }
+}
+
+test_service_tracks_recent_idle_notifications() {
+  # Service should track recent idle notifications by repo
+  grep -q "recentIdle\|idleNotifications\|idleTracker" "$SERVICE_DIR/server.js" || {
+    echo "Idle notification tracking not found in server.js"
+    return 1
+  }
+}
+
+test_service_check_idle_allows_first_notification() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { createConnection } from 'net';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    
+    // Connect via socket and check if idle notification should be sent
+    const socket = createConnection(config.socketPath);
+    
+    await new Promise((resolve) => {
+      socket.on('connect', () => {
+        // Register session first
+        socket.write(JSON.stringify({ type: 'register', sessionId: 'ses_1' }) + '\n');
+      });
+      
+      let buffer = '';
+      socket.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          
+          if (msg.type === 'registered') {
+            // Now check if we should send idle notification
+            socket.write(JSON.stringify({ 
+              type: 'check_idle', 
+              repoName: 'test-repo' 
+            }) + '\n');
+          }
+          
+          if (msg.type === 'idle_check_result') {
+            if (msg.shouldSend !== true) {
+              console.log('FAIL: First idle notification should be allowed');
+              process.exit(1);
+            }
+            resolve();
+          }
+        }
+      });
+    });
+    
+    socket.destroy();
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_check_idle_suppresses_duplicate() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { createConnection } from 'net';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    
+    // First socket - session 1
+    const socket1 = createConnection(config.socketPath);
+    
+    await new Promise((resolve) => {
+      socket1.on('connect', () => {
+        socket1.write(JSON.stringify({ type: 'register', sessionId: 'ses_1' }) + '\n');
+      });
+      
+      let buffer = '';
+      socket1.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          
+          if (msg.type === 'registered') {
+            socket1.write(JSON.stringify({ 
+              type: 'check_idle', 
+              repoName: 'test-repo' 
+            }) + '\n');
+          }
+          
+          if (msg.type === 'idle_check_result' && msg.shouldSend === true) {
+            resolve();
+          }
+        }
+      });
+    });
+    
+    // Second socket - session 2 (same repo, should be suppressed)
+    const socket2 = createConnection(config.socketPath);
+    
+    const shouldSend = await new Promise((resolve) => {
+      socket2.on('connect', () => {
+        socket2.write(JSON.stringify({ type: 'register', sessionId: 'ses_2' }) + '\n');
+      });
+      
+      let buffer = '';
+      socket2.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          
+          if (msg.type === 'registered') {
+            socket2.write(JSON.stringify({ 
+              type: 'check_idle', 
+              repoName: 'test-repo' 
+            }) + '\n');
+          }
+          
+          if (msg.type === 'idle_check_result') {
+            resolve(msg.shouldSend);
+          }
+        }
+      });
+    });
+    
+    socket1.destroy();
+    socket2.destroy();
+    await stopService(service);
+    
+    if (shouldSend !== false) {
+      console.log('FAIL: Duplicate idle notification should be suppressed');
+      process.exit(1);
+    }
+    
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_check_idle_allows_after_window_expires() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { createConnection } from 'net';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    const socket = createConnection(config.socketPath);
+    
+    // Helper to send message and wait for response
+    const sendAndWait = (socket, msg, expectedType) => {
+      return new Promise((resolve) => {
+        let buffer = '';
+        const handler = (data) => {
+          buffer += data.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const response = JSON.parse(line);
+            if (response.type === expectedType) {
+              socket.off('data', handler);
+              resolve(response);
+            }
+          }
+        };
+        socket.on('data', handler);
+        socket.write(JSON.stringify(msg) + '\n');
+      });
+    };
+    
+    // Wait for connection
+    await new Promise(resolve => socket.on('connect', resolve));
+    
+    // Register
+    await sendAndWait(socket, { type: 'register', sessionId: 'ses_1' }, 'registered');
+    
+    // First check with 100ms window
+    const first = await sendAndWait(socket, { 
+      type: 'check_idle', 
+      repoName: 'test-repo',
+      requestId: 'req-1',
+      dedupeMs: 100 
+    }, 'idle_check_result');
+    
+    if (first.shouldSend !== true) {
+      console.log('FAIL: First check should be allowed');
+      process.exit(1);
+    }
+    
+    // Wait for window to expire
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    // Second check after window expired - should be allowed
+    const second = await sendAndWait(socket, { 
+      type: 'check_idle', 
+      repoName: 'test-repo',
+      requestId: 'req-2',
+      dedupeMs: 100 
+    }, 'idle_check_result');
+    
+    socket.destroy();
+    await stopService(service);
+    
+    if (second.shouldSend !== true) {
+      console.log('FAIL: Check after window expired should be allowed');
+      process.exit(1);
+    }
+    
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_check_idle_allows_different_repos() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    import { createConnection } from 'net';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    
+    // First socket - repo-a
+    const socket1 = createConnection(config.socketPath);
+    
+    await new Promise((resolve) => {
+      socket1.on('connect', () => {
+        socket1.write(JSON.stringify({ type: 'register', sessionId: 'ses_1' }) + '\n');
+      });
+      
+      let buffer = '';
+      socket1.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          
+          if (msg.type === 'registered') {
+            socket1.write(JSON.stringify({ 
+              type: 'check_idle', 
+              repoName: 'repo-a' 
+            }) + '\n');
+          }
+          
+          if (msg.type === 'idle_check_result' && msg.shouldSend === true) {
+            resolve();
+          }
+        }
+      });
+    });
+    
+    // Second socket - different repo (should be allowed)
+    const socket2 = createConnection(config.socketPath);
+    
+    const shouldSend = await new Promise((resolve) => {
+      socket2.on('connect', () => {
+        socket2.write(JSON.stringify({ type: 'register', sessionId: 'ses_2' }) + '\n');
+      });
+      
+      let buffer = '';
+      socket2.on('data', (data) => {
+        buffer += data.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          
+          if (msg.type === 'registered') {
+            socket2.write(JSON.stringify({ 
+              type: 'check_idle', 
+              repoName: 'repo-b' 
+            }) + '\n');
+          }
+          
+          if (msg.type === 'idle_check_result') {
+            resolve(msg.shouldSend);
+          }
+        }
+      });
+    });
+    
+    socket1.destroy();
+    socket2.destroy();
+    await stopService(service);
+    
+    if (shouldSend !== true) {
+      console.log('FAIL: Different repo should be allowed');
+      process.exit(1);
+    }
+    
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+# =============================================================================
 # Run Tests
 # =============================================================================
 
@@ -1134,6 +1522,20 @@ for test_func in \
   test_service_new_session_page_has_message_input \
   test_service_new_session_api_proxies_projects \
   test_service_new_session_api_proxies_agents
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+echo ""
+echo "Idle Notification Deduplication Tests (Issue #34):"
+
+for test_func in \
+  test_service_handles_check_idle_message \
+  test_service_tracks_recent_idle_notifications \
+  test_service_check_idle_allows_first_notification \
+  test_service_check_idle_suppresses_duplicate \
+  test_service_check_idle_allows_after_window_expires \
+  test_service_check_idle_allows_different_repos
 do
   run_test "${test_func#test_}" "$test_func"
 done

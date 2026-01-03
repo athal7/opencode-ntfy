@@ -18,6 +18,7 @@ import {
   isConnected,
   requestNonce,
   setPermissionHandler,
+  checkIdle,
 } from './service-client.js'
 
 // Load configuration from config file and environment
@@ -139,6 +140,12 @@ export const Notify = async ({ $, client, directory, serverUrl }) => {
             idleTimer = null
             // Don't send notification if session was canceled
             if (wasCanceled) {
+              return
+            }
+            
+            // Issue #34: Check with service to deduplicate across sessions
+            const shouldSend = await checkIdle(repoName)
+            if (!shouldSend) {
               return
             }
             

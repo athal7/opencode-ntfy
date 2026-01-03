@@ -874,6 +874,27 @@ test_uses_callback_host_for_session_url() {
   }
 }
 
+# =============================================================================
+# Idle Notification Deduplication Tests (Issue #34)
+# =============================================================================
+
+test_imports_check_idle_from_service_client() {
+  # Issue #34: Plugin should import checkIdle from service-client
+  grep -q "checkIdle" "$PLUGIN_DIR/index.js" || {
+    echo "checkIdle not imported/used in index.js"
+    return 1
+  }
+}
+
+test_calls_check_idle_before_sending_notification() {
+  # Issue #34: Before sending idle notification, should check with service
+  # Look for checkIdle call in the idle notification code path
+  grep -q "checkIdle" "$PLUGIN_DIR/index.js" || {
+    echo "checkIdle call not found in idle notification path"
+    return 1
+  }
+}
+
 echo ""
 echo "Session Tracking and Open Session Action Tests (Issue #27):"
 
@@ -885,6 +906,16 @@ for test_func in \
   test_builds_open_session_url \
   test_uses_mobile_ui_url \
   test_uses_callback_host_for_session_url
+do
+  run_test "${test_func#test_}" "$test_func"
+done
+
+echo ""
+echo "Idle Notification Deduplication Tests (Issue #34):"
+
+for test_func in \
+  test_imports_check_idle_from_service_client \
+  test_calls_check_idle_before_sending_notification
 do
   run_test "${test_func#test_}" "$test_func"
 done

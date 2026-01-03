@@ -47,6 +47,11 @@ const NONCE_TTL_MS = 60 * 60 * 1000 // 1 hour
 // Session storage: sessionId -> socket connection
 const sessions = new Map()
 
+// Idle notification deduplication (Issue #34)
+// Tracks recent idle notifications by repo: repoName -> timestamp
+const recentIdleNotifications = new Map()
+const DEFAULT_IDLE_DEDUPE_MS = 30 * 1000 // 30 seconds default window
+
 // Valid response types
 const VALID_RESPONSES = ['once', 'always', 'reject']
 
@@ -1050,6 +1055,49 @@ function cleanupNonces() {
 }
 
 /**
+ * Check if an idle notification should be sent for a repo (Issue #34)
+ * Implements deduplication to prevent multiple sessions from sending
+ * duplicate idle notifications for the same repo within a time window.
+ * 
+ * @param {string} repoName - Repository name
+ * @param {number} [dedupeMs] - Deduplication window in ms (default: 30s)
+ * @returns {boolean} True if notification should be sent, false if duplicate
+ */
+function checkIdleNotification(repoName, dedupeMs) {
+  const window = dedupeMs ?? DEFAULT_IDLE_DEDUPE_MS
+  const now = Date.now()
+  const lastSent = recentIdleNotifications.get(repoName)
+  
+  if (lastSent && (now - lastSent) < window) {
+    // Within deduplication window - suppress
+    return false
+  }
+  
+  // Record this notification
+  recentIdleNotifications.set(repoName, now)
+  return true
+}
+
+/**
+ * Clean up expired idle notification records
+ * @param {number} [maxAge] - Max age in ms (default: 5 minutes)
+ * @returns {number} Number of expired records removed
+ */
+function cleanupIdleRecords(maxAge = 5 * 60 * 1000) {
+  const now = Date.now()
+  let removed = 0
+  
+  for (const [repoName, timestamp] of recentIdleNotifications) {
+    if (now - timestamp > maxAge) {
+      recentIdleNotifications.delete(repoName)
+      removed++
+    }
+  }
+  
+  return removed
+}
+
+/**
  * Register a session connection
  * @param {string} sessionId - OpenCode session ID
  * @param {net.Socket} socket - Socket connection to the plugin
@@ -1457,6 +1505,19 @@ function handleSocketMessage(socket, message) {
       }
       break
       
+    case 'check_idle':
+      // Issue #34: Deduplicate idle notifications across sessions
+      if (message.repoName) {
+        const result = checkIdleNotification(message.repoName, message.dedupeMs)
+        socket.write(JSON.stringify({ 
+          type: 'idle_check_result', 
+          repoName: message.repoName,
+          requestId: message.requestId, // Echo back for response correlation
+          shouldSend: result 
+        }) + '\n')
+      }
+      break
+      
     default:
       console.warn(`[opencode-ntfy] Unknown message type: ${message.type}`)
   }
@@ -1505,11 +1566,15 @@ export async function startService(config = {}) {
     socketServer.once('error', reject)
   })
   
-  // Start periodic nonce cleanup
+  // Start periodic cleanup (nonces and idle records)
   const cleanupInterval = setInterval(() => {
-    const removed = cleanupNonces()
-    if (removed > 0) {
-      console.log(`[opencode-ntfy] Cleaned up ${removed} expired nonces`)
+    const removedNonces = cleanupNonces()
+    if (removedNonces > 0) {
+      console.log(`[opencode-ntfy] Cleaned up ${removedNonces} expired nonces`)
+    }
+    const removedIdle = cleanupIdleRecords()
+    if (removedIdle > 0) {
+      console.log(`[opencode-ntfy] Cleaned up ${removedIdle} expired idle records`)
     }
   }, 60 * 1000) // Every minute
   
