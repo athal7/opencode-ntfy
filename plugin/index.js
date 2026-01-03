@@ -23,7 +23,7 @@ import {
 // Load configuration from config file and environment
 const config = loadConfig()
 
-export const Notify = async ({ $, client, directory, serverUrl }) => {
+const Notify = async ({ $, client, directory, serverUrl }) => {
   if (!config.topic) {
     return {}
   }
