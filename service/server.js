@@ -527,11 +527,15 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       // Escape HTML first
       let html = escapeHtml(text);
       
-      // Code blocks (``` ... ```)
-      html = html.replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, '<pre><code>$2</code></pre>');
+      const backtick = String.fromCharCode(96);
+      const codeBlockRegex = new RegExp(backtick + backtick + backtick + '(\\\\w*)\\\\n([\\\\s\\\\S]*?)' + backtick + backtick + backtick, 'g');
+      const inlineCodeRegex = new RegExp(backtick + '([^' + backtick + ']+)' + backtick, 'g');
       
-      // Inline code (\`...\`)
-      html = html.replace(/\`([^\`]+)\`/g, '<code style="background:#30363d;padding:2px 6px;border-radius:4px;font-size:13px;">$1</code>');
+      // Code blocks
+      html = html.replace(codeBlockRegex, '<pre><code>$2</code></pre>');
+      
+      // Inline code
+      html = html.replace(inlineCodeRegex, '<code style="background:#30363d;padding:2px 6px;border-radius:4px;font-size:13px;">$1</code>');
       
       // Bold (**...**)
       html = html.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
