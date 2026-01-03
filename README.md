@@ -4,9 +4,10 @@ ntfy notification plugin for [OpenCode](https://github.com/sst/opencode) with in
 
 ## Features
 
-- **Idle notifications** - Get notified when OpenCode has been waiting for input for 5+ minutes
+- **Idle notifications** - Get notified when OpenCode has been waiting for input, with an "Open Session" button to jump directly to the web UI
 - **Interactive permissions** - Respond to permission requests directly from your phone via ntfy action buttons
 - **Error & retry alerts** - Stay informed when something needs attention
+- **Remote access** - Built-in proxy enables accessing OpenCode's web UI from your phone via Tailscale
 
 ## Installation
 
@@ -20,22 +21,47 @@ Or install manually:
 curl -fsSL https://raw.githubusercontent.com/athal7/opencode-ntfy/main/install.sh | bash
 ```
 
+## Quick Start
+
+1. **Add the plugin** to `~/.config/opencode/opencode.json`:
+
+   ```json
+   {
+     "plugin": ["~/.config/opencode/plugins/opencode-ntfy"]
+   }
+   ```
+
+2. **Create config** at `~/.config/opencode-ntfy/config.json`:
+
+   ```json
+   {
+     "topic": "your-secret-topic",
+     "callbackHost": "your-machine.tailnet.ts.net"
+   }
+   ```
+
+3. **Start the callback service**:
+
+   ```bash
+   brew services start opencode-ntfy
+   ```
+
+4. **Run OpenCode** - notifications will be sent to your ntfy topic!
+
 ## Configuration
 
-Add the plugin to your `~/.config/opencode/opencode.json`:
+### Config File
 
-```json
-{
-  "plugin": ["~/.config/opencode/plugins/opencode-ntfy"]
-}
-```
-
-Then create a config file at `~/.config/opencode-ntfy/config.json`:
+Create `~/.config/opencode-ntfy/config.json`:
 
 ```json
 {
   "topic": "your-secret-topic",
-  "callbackHost": "your-machine.tailnet.ts.net"
+  "server": "https://ntfy.sh",
+  "token": "tk_xxx",
+  "callbackHost": "your-machine.tailnet.ts.net",
+  "callbackPort": 4097,
+  "idleDelayMs": 300000
 }
 ```
 
@@ -46,38 +72,49 @@ Then create a config file at `~/.config/opencode-ntfy/config.json`:
 | `topic` | *(required)* | Your ntfy topic name |
 | `server` | `https://ntfy.sh` | ntfy server URL |
 | `token` | *(none)* | ntfy access token for protected topics |
-| `callbackHost` | *(none)* | Callback host for interactive notifications (required for interactive features) |
-| `callbackPort` | `4097` | Callback server port |
-| `idleDelayMs` | `300000` | Idle notification delay (5 min) |
+| `callbackHost` | *(none)* | Hostname for callbacks and proxy (e.g., Tailscale hostname) |
+| `callbackPort` | `4097` | Callback service port |
+| `idleDelayMs` | `300000` | Idle notification delay in ms (default: 5 minutes) |
+| `idleNotify` | `true` | Enable idle notifications |
 | `errorNotify` | `true` | Enable error notifications |
-| `errorDebounceMs` | `60000` | Error notification debounce window |
+| `errorDebounceMs` | `60000` | Minimum time between error notifications |
 | `retryNotifyFirst` | `true` | Notify on first retry |
 | `retryNotifyAfter` | `3` | Also notify after N retries (0 to disable) |
 
 ### Environment Variables
 
-Environment variables override config file values. Use `NTFY_` prefix:
+Environment variables override config file values:
 
-```bash
-export NTFY_TOPIC=your-secret-topic
-export NTFY_CALLBACK_HOST=your-machine.tailnet.ts.net
-```
+| Environment Variable | Config Key |
+|---------------------|------------|
+| `NTFY_TOPIC` | `topic` |
+| `NTFY_SERVER` | `server` |
+| `NTFY_TOKEN` | `token` |
+| `NTFY_CALLBACK_HOST` | `callbackHost` |
+| `NTFY_CALLBACK_PORT` | `callbackPort` |
+| `NTFY_IDLE_DELAY_MS` | `idleDelayMs` |
+| `NTFY_IDLE_NOTIFY` | `idleNotify` |
+| `NTFY_ERROR_NOTIFY` | `errorNotify` |
+| `NTFY_ERROR_DEBOUNCE_MS` | `errorDebounceMs` |
+| `NTFY_RETRY_NOTIFY_FIRST` | `retryNotifyFirst` |
+| `NTFY_RETRY_NOTIFY_AFTER` | `retryNotifyAfter` |
 
-### Interactive Permissions
+## Callback Service
 
-Interactive permission notifications require `callbackHost` to be configured AND the callback service to be running. Without these, only read-only notifications (idle, error, retry) are sent.
+The callback service is a persistent background process that:
 
-#### Starting the Callback Service
+1. **Receives permission responses** from ntfy action buttons
+2. **Proxies requests** to OpenCode's web UI for the "Open Session" button
 
-The callback service runs persistently to handle permission responses from ntfy.
+### Starting the Service
 
-**If installed via Homebrew (recommended):**
+**Homebrew (recommended):**
 
 ```bash
 # Start the service (runs at login)
 brew services start opencode-ntfy
 
-# Check service status
+# Check status
 brew services info opencode-ntfy
 
 # View logs
@@ -87,39 +124,103 @@ tail -f ~/Library/Logs/Homebrew/opencode-ntfy.log
 brew services stop opencode-ntfy
 ```
 
-**If installed manually:**
+**Manual installation:**
 
 ```bash
-# Start the service
+# Start
 launchctl load ~/Library/LaunchAgents/io.opencode.ntfy.plist
 
-# Check service status
+# Check status
 launchctl list | grep opencode
 
 # View logs
 tail -f ~/.local/share/opencode-ntfy/opencode-ntfy.log
 
-# Stop the service
+# Stop
 launchctl unload ~/Library/LaunchAgents/io.opencode.ntfy.plist
 ```
 
-#### Configuring Callback Access
+### Network Requirements
 
-For interactive notifications to work, your phone must be able to reach the callback server:
+The callback service listens on port 4097 (configurable). For remote access:
 
-1. Set `callbackHost` to your machine's hostname accessible from your phone
-2. For Tailscale users: use your Tailscale hostname (e.g., `macbook.tail1234.ts.net`)
-3. Ensure port 4097 (or your configured `callbackPort`) is accessible
-4. Start the callback service (see above)
+1. Your phone must be able to reach the callback host on the callback port
+2. **Tailscale users**: Use your machine's Tailscale hostname (e.g., `macbook.tail1234.ts.net`)
+3. Ensure the port is not blocked by firewalls
 
-## Notifications
+## Features in Detail
 
-| Event | Type | Interactive |
-|-------|------|-------------|
-| Permission request | Immediate | Yes (Allow Once / Allow Always / Reject) |
-| Session idle (5min) | Delayed | No |
-| Retry | Immediate | No |
-| Error | Debounced | No |
+### Idle Notifications with Open Session
+
+When OpenCode goes idle (waiting for input), you'll receive a notification with an **Open Session** button. Tapping it opens the OpenCode web UI directly on your phone.
+
+This works by proxying requests through the callback service:
+- OpenCode's web UI binds to `localhost` only
+- The callback service proxies requests from your remote device to localhost
+- URL format: `http://{callbackHost}:{callbackPort}/p/{opencodePort}/{path}`
+
+**Security note**: The proxy forwards requests to any localhost port in the range 1024-65535. This is secure when used with Tailscale (which provides authentication), but be aware that any service on localhost in that port range is accessible through the proxy.
+
+### Interactive Permissions
+
+Permission requests show three action buttons:
+- **Allow Once** - Approve this specific request
+- **Allow Always** - Approve and remember for this tool
+- **Reject** - Deny the request
+
+Requires `callbackHost` to be configured and the callback service running.
+
+### Error & Retry Notifications
+
+- **Errors**: Sent immediately (debounced to prevent spam)
+- **Retries**: Configurable - notify on first retry and/or after N retries
+
+## Notification Types
+
+| Event | Timing | Interactive | Actions |
+|-------|--------|-------------|---------|
+| Permission request | Immediate | Yes | Allow Once / Allow Always / Reject |
+| Session idle | After delay | Partial | Open Session button |
+| Retry | Immediate | No | - |
+| Error | Debounced | No | - |
+
+## Troubleshooting
+
+### Notifications not arriving
+
+1. Check ntfy topic is correct: `curl -d "test" ntfy.sh/your-topic`
+2. Verify config file syntax: `cat ~/.config/opencode-ntfy/config.json | jq .`
+3. Check plugin is loaded in OpenCode logs
+
+### Permission buttons not working
+
+1. Ensure callback service is running: `brew services info opencode-ntfy`
+2. Verify `callbackHost` is reachable from your phone
+3. Check callback service logs for errors
+
+### Open Session button not working
+
+1. Ensure callback service is running
+2. Verify you can reach `http://{callbackHost}:{callbackPort}/health` from your phone
+3. Check that OpenCode's web UI is running (it starts automatically with OpenCode)
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  OpenCode   │────▶│ ntfy Plugin  │────▶│  ntfy.sh    │
+│  (local)    │     │  (in-proc)   │     │  (cloud)    │
+└─────────────┘     └──────────────┘     └─────────────┘
+       │                   │                    │
+       │                   │                    │
+       ▼                   ▼                    ▼
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Web UI     │◀────│  Callback    │◀────│  Phone      │
+│  :4096      │     │  Service     │     │  (ntfy app) │
+│             │     │  :4097       │     │             │
+└─────────────┘     └──────────────┘     └─────────────┘
+                    (proxy + IPC)
+```
 
 ## Development
 
