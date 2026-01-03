@@ -424,6 +424,95 @@ test_service_api_chat_proxies_post() {
   fi
 }
 
+test_service_mobile_ui_fetches_messages_endpoint() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    const port = service.httpServer.address().port;
+    
+    const res = await fetch('http://localhost:' + port + '/m/4096/myrepo/session/ses_123');
+    const html = await res.text();
+    
+    // The mobile UI JavaScript should fetch from /message endpoint, not expect messages in session
+    // This is critical: messages are at /session/:id/message, not embedded in /session/:id
+    if (!html.includes('/message')) {
+      console.log('FAIL: Mobile UI should fetch from /message endpoint');
+      process.exit(1);
+    }
+    
+    // Should NOT rely on session.messages (which doesn't exist in OpenCode API)
+    // The loadSession function should fetch messages separately
+    if (html.includes('session.messages')) {
+      console.log('FAIL: Mobile UI should not use session.messages (it does not exist in API)');
+      process.exit(1);
+    }
+    
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_mobile_ui_parses_message_info_role() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    const port = service.httpServer.address().port;
+    
+    const res = await fetch('http://localhost:' + port + '/m/4096/myrepo/session/ses_123');
+    const html = await res.text();
+    
+    // The mobile UI should look for role in message.info.role (OpenCode structure)
+    // not message.role (which doesn't exist at top level)
+    if (!html.includes('.info.role') && !html.includes('info\"].role')) {
+      console.log('FAIL: Mobile UI should access role via message.info.role');
+      process.exit(1);
+    }
+    
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
 
 
 # =============================================================================
@@ -951,7 +1040,9 @@ for test_func in \
   test_service_mobile_page_returns_html \
   test_service_mobile_page_has_text_input \
   test_service_api_session_proxies_get \
-  test_service_api_chat_proxies_post
+  test_service_api_chat_proxies_post \
+  test_service_mobile_ui_fetches_messages_endpoint \
+  test_service_mobile_ui_parses_message_info_role
 do
   run_test "${test_func#test_}" "$test_func"
 done

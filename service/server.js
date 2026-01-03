@@ -357,19 +357,19 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       }
     });
     
-    // Load session
+    // Load session messages
     async function loadSession() {
       try {
-        const res = await fetch(API_BASE + '/session/' + SESSION_ID);
+        // Fetch messages from the /message endpoint (not embedded in session)
+        const res = await fetch(API_BASE + '/session/' + SESSION_ID + '/message');
         if (!res.ok) throw new Error('Session not found');
         
-        const session = await res.json();
-        const messages = session.messages || [];
+        const messages = await res.json();
         
-        // Find last assistant message
+        // Find last assistant message (role is in message.info.role)
         let lastAssistant = null;
         for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === 'assistant') {
+          if (messages[i].info && messages[i].info.role === 'assistant') {
             lastAssistant = messages[i];
             break;
           }
@@ -384,10 +384,6 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
                 content += part.text;
               }
             }
-          } else if (lastAssistant.content) {
-            content = typeof lastAssistant.content === 'string' 
-              ? lastAssistant.content 
-              : JSON.stringify(lastAssistant.content);
           }
           
           messageEl.innerHTML = \`
