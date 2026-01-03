@@ -349,16 +349,20 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         if (requestAccepted) {
           inputEl.value = '';
           inputEl.style.height = 'auto';
-          statusEl.textContent = 'Sent! Check OpenCode for response.';
+          statusEl.textContent = 'Processing...';
+          isProcessing = true;
           
           // Show user message immediately
           messageEl.innerHTML = \`
             <div class="message-header">
               <span class="message-role" style="background:#1f6feb">You</span>
-              <span>Just now</span>
+              <span>Processing...</span>
             </div>
             <div class="message-content">\${escapeHtml(content)}</div>
           \`;
+          
+          // Start polling for assistant response
+          startPolling();
         }
       } catch (err) {
         statusEl.textContent = 'Failed to send';
@@ -378,16 +382,29 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       }
     });
     
+    // Track last message count to detect new messages
+    let lastMessageCount = 0;
+    let isProcessing = false;
+    let pollInterval = null;
+    
     // Load session messages
-    async function loadSession() {
+    async function loadSession(showLoading = true) {
       try {
         // Fetch messages from the /message endpoint (not embedded in session)
         const res = await fetch(API_BASE + '/session/' + SESSION_ID + '/message');
         if (!res.ok) throw new Error('Session not found');
         
         const messages = await res.json();
+        lastMessageCount = messages.length;
         
-        // Find last assistant message (role is in message.info.role)
+        // Find last message (could be user or assistant)
+        const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+        const lastRole = lastMessage?.info?.role;
+        
+        // Check if we're waiting for assistant response
+        isProcessing = lastRole === 'user';
+        
+        // Find last assistant message for display
         let lastAssistant = null;
         for (let i = messages.length - 1; i >= 0; i--) {
           if (messages[i].info && messages[i].info.role === 'assistant') {
@@ -396,7 +413,38 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
           }
         }
         
-        if (lastAssistant) {
+        if (isProcessing) {
+          // Show processing state - find the last user message
+          let lastUser = null;
+          for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].info && messages[i].info.role === 'user') {
+              lastUser = messages[i];
+              break;
+            }
+          }
+          
+          let userContent = '';
+          if (lastUser?.parts) {
+            for (const part of lastUser.parts) {
+              if (part.type === 'text') {
+                userContent += part.text;
+              }
+            }
+          }
+          
+          messageEl.innerHTML = \`
+            <div class="message-header">
+              <span class="message-role" style="background:#1f6feb">You</span>
+              <span>Processing...</span>
+            </div>
+            <div class="message-content">\${escapeHtml(userContent || 'Waiting for response...')}</div>
+          \`;
+          messageEl.classList.remove('message-error');
+          statusEl.textContent = 'Processing...';
+          
+          // Start polling for response
+          startPolling();
+        } else if (lastAssistant) {
           // Extract text content from message parts
           let content = '';
           if (lastAssistant.parts) {
@@ -413,17 +461,35 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
             </div>
             <div class="message-content">\${escapeHtml(content || 'No content')}</div>
           \`;
+          messageEl.classList.remove('message-error');
           statusEl.textContent = 'Ready';
+          
+          // Stop polling when we have a response
+          stopPolling();
         } else {
           messageEl.innerHTML = '<div class="message-loading">No messages yet</div>';
           statusEl.textContent = 'New session';
+          stopPolling();
         }
         
-        sendBtn.disabled = !inputEl.value.trim();
+        sendBtn.disabled = !inputEl.value.trim() || isProcessing;
       } catch (err) {
         messageEl.innerHTML = '<div class="message-loading">Could not load session</div>';
         messageEl.classList.add('message-error');
         statusEl.textContent = 'Error';
+        stopPolling();
+      }
+    }
+    
+    function startPolling() {
+      if (pollInterval) return;
+      pollInterval = setInterval(() => loadSession(false), 3000);
+    }
+    
+    function stopPolling() {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
       }
     }
     
