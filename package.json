@@ -9,6 +9,9 @@
   },
   "author": "Andrew Thal <467872+athal7@users.noreply.github.com>",
   "license": "MIT",
+  "dependencies": {
+    "httpxy": "^0.1.7"
+  },
   "devDependencies": {
     "@semantic-release/github": "^9.2.6",
     "semantic-release": "^25.0.2"
