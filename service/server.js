@@ -552,18 +552,25 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         }
         
         if (requestAccepted) {
+          // Clear input and update UI immediately
           inputEl.value = '';
           inputEl.style.height = 'auto';
+          isSending = false;
+          sendBtn.disabled = true; // Disabled because input is empty
+          sendBtn.textContent = 'Send';
           statusEl.textContent = 'Processing...';
           isProcessing = true;
           
           // Reload messages to show the new user message and poll for response
-          await loadSession(false);
+          loadSession(false).catch(() => {}); // Don't await - let it happen in background
           startPolling();
+        } else {
+          isSending = false;
+          sendBtn.disabled = !inputEl.value.trim();
+          sendBtn.textContent = 'Send';
         }
       } catch (err) {
         statusEl.textContent = 'Failed to send';
-      } finally {
         isSending = false;
         sendBtn.disabled = !inputEl.value.trim();
         sendBtn.textContent = 'Send';
