@@ -192,7 +192,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       overflow-y: auto;
       margin-bottom: 16px;
       display: flex;
-      flex-direction: column-reverse;
+      flex-direction: column;
       gap: 12px;
       min-height: 0;
     }
@@ -420,16 +420,14 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       }
     }
     
-    // Render all messages in the conversation (newest first for column-reverse layout)
+    // Render all messages in the conversation
     function renderMessages(messages) {
       if (!messages || messages.length === 0) {
         messagesListEl.innerHTML = '<div class="message"><div class="message-loading">No messages yet</div></div>';
         return;
       }
       
-      // Build array of message HTML, then reverse so newest appears first
-      // (column-reverse displays first DOM element at bottom)
-      const messageHtmls = [];
+      let html = '';
       for (const msg of messages) {
         const role = msg.info?.role || 'unknown';
         const isAssistant = role === 'assistant';
@@ -459,7 +457,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         
         const statusText = isInProgress ? '<span style="color:#7d8590;margin-left:8px;">Processing...</span>' : '';
         
-        messageHtmls.push(\`
+        html += \`
           <div class="message">
             <div class="message-header">
               <span class="message-role" style="background:\${roleColor}">\${roleLabel}</span>
@@ -467,11 +465,13 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
             </div>
             <div class="message-content">\${renderMarkdown(content)}</div>
           </div>
-        \`);
+        \`;
       }
       
-      // Reverse so newest message is first in DOM (appears at bottom with column-reverse)
-      messagesListEl.innerHTML = messageHtmls.reverse().join('') || '<div class="message"><div class="message-loading">No messages yet</div></div>';
+      messagesListEl.innerHTML = html || '<div class="message"><div class="message-loading">No messages yet</div></div>';
+      
+      // Scroll to bottom to show newest message
+      messagesListEl.scrollTop = messagesListEl.scrollHeight;
     }
     
     // Load session messages
