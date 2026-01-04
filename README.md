@@ -249,6 +249,14 @@ Requires `callbackHost` to be configured and the callback service running.
 2. Verify you can reach `http://{callbackHost}:{callbackPort}/health` from your phone
 3. Check that OpenCode is running (the callback service proxies to it)
 
+### iOS prompts to "Show IP Address" repeatedly (iCloud Private Relay)
+
+If you're using iCloud Private Relay on iOS and Safari keeps asking whether to show your IP address to the Tailscale domain, this is Safari's privacy feature, not an opencode-ntfy authentication issue.
+
+**Solution: Allow IP address for the website**
+
+When Safari shows the prompt, tap "Show IP Address". To make this permanent, open the Page Menu in Safari (tap the icon left of the URL) and find the website settings to enable "Use IP Address" for your Tailscale hostname. This only affects that domain and preserves Private Relay for all other sites.
+
 ## Architecture
 
 ```
