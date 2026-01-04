@@ -752,9 +752,9 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         const agents = await res.json();
         
         // Filter to user-facing agents:
-        // - mode === 'primary' (not subagents)
+        // - mode === 'primary' or 'all' (not subagents)
         // - has a description (excludes internal agents like compaction, title, summary)
-        const primaryAgents = agents.filter(a => a.mode === 'primary' && a.description);
+        const primaryAgents = agents.filter(a => (a.mode === 'primary' || a.mode === 'all') && a.description);
         
         agentEl.innerHTML = '';
         primaryAgents.forEach(a => {
