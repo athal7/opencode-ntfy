@@ -266,6 +266,48 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       border-color: #f85149;
       color: #f85149;
     }
+    .tool-calls {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .tool-call {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    .tool-call-name {
+      color: #58a6ff;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .tool-call-description {
+      color: #7d8590;
+      font-size: 12px;
+    }
+    .tool-call-status {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tool-call-status.running {
+      background: #1f6feb;
+      color: #fff;
+    }
+    .tool-call-status.success {
+      background: #238636;
+      color: #fff;
+    }
+    .tool-call-status.error {
+      background: #da3633;
+      color: #fff;
+    }
     .input-container {
       flex-shrink: 0;
       background: #21262d;
@@ -467,7 +509,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         // OpenCode's /message endpoint waits for LLM response, which can take minutes.
         // Use AbortController with short timeout - if request is accepted, message is queued.
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
         
         // Build message body with agent and optional model
         const messageBody = {
@@ -585,26 +627,23 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         const roleColor = isAssistant ? '#238636' : '#1f6feb';
         const isInProgress = isAssistant && !msg.info?.time?.completed;
         
-        // Extract text content from message parts
+        // Extract text content and tool calls from message parts
         let content = '';
-        let hasToolCalls = false;
+        const toolCalls = [];
         if (msg.parts) {
           for (const part of msg.parts) {
             if (part.type === 'text') {
               content += part.text;
             } else if (part.type === 'tool') {
-              hasToolCalls = true;
+              toolCalls.push(part);
             }
           }
         }
         
-        // If message has tool calls but we're not showing them, strip trailing colon
-        if (hasToolCalls && content.endsWith(':')) {
-          content = content.slice(0, -1).trimEnd();
-        }
+        // Don't strip trailing colon anymore since we'll show tool calls
         
         // Skip messages with no text content (tool calls, system messages, etc.)
-        if (!content) {
+        if (!content && toolCalls.length === 0) {
           // Show in-progress assistant messages even without content
           if (isInProgress) {
             content = 'Waiting for response...';
@@ -615,13 +654,38 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         
         const statusText = isInProgress ? '<span style="color:#7d8590;margin-left:8px;">Processing...</span>' : '';
         
+        // Render tool calls
+        let toolCallsHtml = '';
+        if (toolCalls.length > 0) {
+          toolCallsHtml = '<div class="tool-calls">';
+          for (const tool of toolCalls) {
+            const toolName = tool.tool || 'unknown';
+            const description = tool.state?.input?.description || tool.state?.input?.prompt || '';
+            const status = tool.state?.status || 'unknown';
+            const statusClass = status === 'running' ? 'running' : status === 'success' ? 'success' : 'error';
+            const statusLabel = status === 'running' ? '...' : status === 'success' ? '✓' : '✗';
+            
+            toolCallsHtml += \`
+              <div class="tool-call">
+                <div class="tool-call-name">
+                  \${escapeHtml(toolName)}
+                  <span class="tool-call-status \${statusClass}">\${statusLabel}</span>
+                </div>
+                \${description ? '<div class="tool-call-description">' + escapeHtml(description) + '</div>' : ''}
+              </div>
+            \`;
+          }
+          toolCallsHtml += '</div>';
+        }
+        
         html += \`
           <div class="message">
             <div class="message-header">
               <span class="message-role" style="background:\${roleColor}">\${roleLabel}</span>
               \${statusText}
             </div>
-            <div class="message-content">\${renderMarkdown(content)}</div>
+            \${content ? '<div class="message-content">' + renderMarkdown(content) + '</div>' : ''}
+            \${toolCallsHtml}
           </div>
         \`;
       }
