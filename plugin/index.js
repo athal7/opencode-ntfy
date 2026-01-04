@@ -217,6 +217,28 @@ const Notify = async ({ $, client, directory, serverUrl }) => {
             event.properties?.error?.type ||
             'Unknown error'
           
+          // Build "Open Session" action if serverUrl and callbackHost are available
+          // Extract session ID from event properties
+          const errorSessionId = event.properties?.info?.id || event.properties?.sessionId
+          let actions
+          if (serverUrl && config.callbackHost && errorSessionId) {
+            try {
+              const opencodeUrl = new URL(serverUrl)
+              const opencodePort = opencodeUrl.port || (opencodeUrl.protocol === 'https:' ? 443 : 80)
+              const protocol = config.callbackHttps ? 'https' : 'http'
+              const portSuffix = config.callbackHttps ? '' : `:${config.callbackPort}`
+              const mobileUrl = `${protocol}://${config.callbackHost}${portSuffix}/m/${opencodePort}/${repoName}/session/${errorSessionId}`
+              actions = [{
+                action: 'view',
+                label: 'Open Session',
+                url: mobileUrl,
+                clear: true,
+              }]
+            } catch {
+              // Silently ignore URL parsing errors
+            }
+          }
+          
           await sendNotification({
             server: config.server,
             topic: config.topic,
@@ -225,6 +247,7 @@ const Notify = async ({ $, client, directory, serverUrl }) => {
             priority: 5,
             tags: ['warning'],
             authToken: config.authToken,
+            actions,
           })
         }
       }

@@ -412,6 +412,15 @@ test_sends_error_notification_with_urgent_priority() {
   }
 }
 
+test_error_notification_includes_session_link() {
+  # Verify error notifications can include "Open Session" action
+  # Check that session.error handler builds actions similar to idle handler
+  grep -A 40 "session.error" "$PLUGIN_DIR/index.js" | grep -q "Open Session" || {
+    echo "Error notifications should include 'Open Session' action"
+    return 1
+  }
+}
+
 # =============================================================================
 # Counter Reset Tests (Issue #7)
 # =============================================================================
@@ -780,7 +789,8 @@ for test_func in \
   test_uses_error_notify_config \
   test_uses_error_debounce_config \
   test_tracks_last_error_time \
-  test_sends_error_notification_with_urgent_priority
+  test_sends_error_notification_with_urgent_priority \
+  test_error_notification_includes_session_link
 do
   run_test "${test_func#test_}" "$test_func"
 done
