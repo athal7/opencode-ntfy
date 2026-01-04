@@ -411,18 +411,40 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
     
     let isSending = false;
     
-    // Header hide/show on scroll (like iOS Messages)
+    // Header hide/show on scroll and keyboard (like iOS Messages)
     let lastScrollTop = 0;
+    const mainEl = document.querySelector('.main');
+    
+    function hideHeader() {
+      headerEl.classList.add('hidden');
+      mainEl.style.paddingTop = '16px'; // Remove header space
+    }
+    
+    function showHeader() {
+      headerEl.classList.remove('hidden');
+      mainEl.style.paddingTop = '60px'; // Restore header space
+    }
+    
     messagesListEl.addEventListener('scroll', () => {
       const scrollTop = messagesListEl.scrollTop;
       if (scrollTop > lastScrollTop && scrollTop > 50) {
         // Scrolling down
-        headerEl.classList.add('hidden');
+        hideHeader();
       } else {
         // Scrolling up
-        headerEl.classList.remove('hidden');
+        showHeader();
       }
       lastScrollTop = scrollTop;
+    });
+    
+    // Hide header when keyboard opens (input focused)
+    inputEl.addEventListener('focus', () => {
+      hideHeader();
+    });
+    
+    // Show header when keyboard closes (input blurred)
+    inputEl.addEventListener('blur', () => {
+      showHeader();
     });
     
     // Auto-resize textarea
