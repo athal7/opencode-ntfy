@@ -675,11 +675,13 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       html = html.replace(/^# (.+)$/gm, '<h2 style="margin:12px 0 8px;font-size:16px;">$1</h2>');
       
       // Lists (- ... or * ... or 1. ...)
-      html = html.replace(/^[\\-\\*] (.+)$/gm, '<li style="margin-left:20px;">$1</li>');
-      html = html.replace(/^\\d+\\. (.+)$/gm, '<li style="margin-left:20px;">$1</li>');
+      html = html.replace(/^[\\-\\*] (.+)$/gm, '<li style="margin-left:20px;margin-bottom:4px;">$1</li>');
+      html = html.replace(/^\\d+\\. (.+)$/gm, '<li style="margin-left:20px;margin-bottom:4px;">$1</li>');
       
-      // Line breaks
+      // Line breaks (but not after list items to avoid extra spacing)
       html = html.replace(/\\n/g, '<br>');
+      // Clean up breaks between list items
+      html = html.replace(/<\\/li><br>/g, '</li>');
       
       return html;
     }
