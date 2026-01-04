@@ -462,10 +462,10 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       
       messagesListEl.innerHTML = html || '<div class="message"><div class="message-loading">No messages yet</div></div>';
       
-      // Scroll to bottom to show latest message (use requestAnimationFrame for reliable timing)
-      requestAnimationFrame(() => {
+      // Scroll to bottom to show latest message (delay ensures DOM is fully rendered)
+      setTimeout(() => {
         messagesListEl.scrollTop = messagesListEl.scrollHeight;
-      });
+      }, 100);
     }
     
     // Load session messages
