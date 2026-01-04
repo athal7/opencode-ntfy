@@ -1100,6 +1100,22 @@ function createCallbackServer(port) {
       return
     }
     
+    // API Proxy routes - /api/:port/agent (for agent selection)
+    const apiAgentMatch = url.pathname.match(/^\/api\/(\d+)\/agent$/)
+    if (apiAgentMatch) {
+      const [, opencodePort] = apiAgentMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), '/agent')
+      return
+    }
+    
+    // API Proxy routes - /api/:port/provider (for model selection)
+    const apiProviderMatch = url.pathname.match(/^\/api\/(\d+)\/provider$/)
+    if (apiProviderMatch) {
+      const [, opencodePort] = apiProviderMatch
+      await proxyToOpenCode(req, res, parseInt(opencodePort, 10), '/provider')
+      return
+    }
+    
     // Unknown route
     res.writeHead(404, { 'Content-Type': 'text/plain' })
     res.end('Not found')
