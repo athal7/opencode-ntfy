@@ -160,13 +160,21 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       flex-direction: column;
     }
     .header {
-      flex-shrink: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
       background: #161b22;
       padding: 12px 16px;
       border-bottom: 1px solid #30363d;
       display: flex;
       align-items: center;
       gap: 8px;
+      transition: transform 0.2s ease-out;
+    }
+    .header.hidden {
+      transform: translateY(-100%);
     }
     .header-icon {
       width: 20px;
@@ -188,6 +196,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       display: flex;
       flex-direction: column;
       padding: 16px;
+      padding-top: 60px; /* Space for fixed header */
       overflow: hidden;
       min-height: 0;
     }
@@ -396,16 +405,31 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
     const statusEl = document.getElementById('status');
     const modelEl = document.getElementById('model');
     const agentEl = document.getElementById('agent');
+    const headerEl = document.querySelector('.header');
     
     let sessionTitle = '';
     
     let isSending = false;
     
+    // Header hide/show on scroll (like iOS Messages)
+    let lastScrollTop = 0;
+    messagesListEl.addEventListener('scroll', () => {
+      const scrollTop = messagesListEl.scrollTop;
+      if (scrollTop > lastScrollTop && scrollTop > 50) {
+        // Scrolling down
+        headerEl.classList.add('hidden');
+      } else {
+        // Scrolling up
+        headerEl.classList.remove('hidden');
+      }
+      lastScrollTop = scrollTop;
+    });
+    
     // Auto-resize textarea
     inputEl.addEventListener('input', () => {
       inputEl.style.height = 'auto';
       inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
-      sendBtn.disabled = !inputEl.value.trim() || isSending;
+      sendBtn.disabled = !inputEl.value.trim();
     });
     
     // Send message
@@ -477,7 +501,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         statusEl.textContent = 'Failed to send';
       } finally {
         isSending = false;
-        sendBtn.disabled = !inputEl.value.trim();
+        sendBtn.disabled = false;
         sendBtn.textContent = 'Send';
       }
     }
@@ -620,7 +644,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
           stopPolling();
         }
         
-        sendBtn.disabled = !inputEl.value.trim() || isProcessing;
+        sendBtn.disabled = !inputEl.value.trim();
       } catch (err) {
         messagesListEl.innerHTML = '<div class="message message-error"><div class="message-loading">Could not load session</div></div>';
         statusEl.textContent = 'Error';
