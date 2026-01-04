@@ -135,15 +135,19 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
   <title>${safeRepoName} - OpenCode</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
       background: #0d1117;
       color: #e6edf3;
-      min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
     .header {
+      flex-shrink: 0;
       background: #161b22;
       padding: 12px 16px;
       border-bottom: 1px solid #30363d;
@@ -172,8 +176,10 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       flex-direction: column;
       padding: 16px;
       overflow: hidden;
+      min-height: 0;
     }
     .session-title {
+      flex-shrink: 0;
       font-size: 13px;
       color: #7d8590;
       padding: 8px 0;
@@ -188,6 +194,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       display: flex;
       flex-direction: column-reverse;
       gap: 12px;
+      min-height: 0;
     }
     .message {
       background: #21262d;
@@ -229,6 +236,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       color: #f85149;
     }
     .input-container {
+      flex-shrink: 0;
       background: #21262d;
       border: 1px solid #30363d;
       border-radius: 8px;
