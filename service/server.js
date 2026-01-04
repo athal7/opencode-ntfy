@@ -623,38 +623,60 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       const recentMessages = messages.slice(-MAX_MESSAGES);
       const skipped = messages.length - recentMessages.length;
       
+      // Group consecutive messages by role to reduce visual clutter
+      const groupedMessages = [];
+      for (const msg of recentMessages) {
+        const role = msg.info?.role;
+        const lastGroup = groupedMessages[groupedMessages.length - 1];
+        
+        if (lastGroup && lastGroup.role === role) {
+          // Same role, add to current group
+          lastGroup.messages.push(msg);
+        } else {
+          // Different role, start new group
+          groupedMessages.push({
+            role: role,
+            messages: [msg]
+          });
+        }
+      }
+      
       let html = '';
       if (skipped > 0) {
         html += '<div style="text-align:center;color:#7d8590;padding:8px;font-size:13px;">' + skipped + ' older messages not shown</div>';
       }
       
-      for (const msg of recentMessages) {
-        const role = msg.info?.role || 'unknown';
+      for (const group of groupedMessages) {
+        const role = group.role || 'unknown';
         const isAssistant = role === 'assistant';
         const roleLabel = isAssistant ? 'Assistant' : 'You';
         const roleColor = isAssistant ? '#238636' : '#1f6feb';
-        const isInProgress = isAssistant && !msg.info?.time?.completed;
         
-        // Extract text content and tool calls from message parts
-        let content = '';
-        const toolCalls = [];
-        if (msg.parts) {
-          for (const part of msg.parts) {
-            if (part.type === 'text') {
-              content += part.text;
-            } else if (part.type === 'tool') {
-              toolCalls.push(part);
+        // Check if any message in group is in progress
+        const isInProgress = group.messages.some(msg => isAssistant && !msg.info?.time?.completed);
+        
+        // Collect all content and tool calls from all messages in group
+        let allContent = '';
+        const allToolCalls = [];
+        
+        for (const msg of group.messages) {
+          // Extract text content and tool calls from message parts
+          if (msg.parts) {
+            for (const part of msg.parts) {
+              if (part.type === 'text') {
+                allContent += part.text;
+              } else if (part.type === 'tool') {
+                allToolCalls.push(part);
+              }
             }
           }
         }
         
-        // Don't strip trailing colon anymore since we'll show tool calls
-        
-        // Skip messages with no text content (tool calls, system messages, etc.)
-        if (!content && toolCalls.length === 0) {
+        // Skip groups with no content
+        if (!allContent && allToolCalls.length === 0) {
           // Show in-progress assistant messages even without content
           if (isInProgress) {
-            content = 'Waiting for response...';
+            allContent = 'Waiting for response...';
           } else {
             continue;
           }
@@ -664,9 +686,9 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         
         // Render tool calls
         let toolCallsHtml = '';
-        if (toolCalls.length > 0) {
+        if (allToolCalls.length > 0) {
           toolCallsHtml = '<div class="tool-calls">';
-          for (const tool of toolCalls) {
+          for (const tool of allToolCalls) {
             const toolName = tool.tool || 'unknown';
             const description = tool.state?.input?.description || tool.state?.input?.prompt || '';
             const status = tool.state?.status || 'unknown';
@@ -686,13 +708,15 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
           toolCallsHtml += '</div>';
         }
         
+        const statusText = isInProgress ? '<span style="color:#7d8590;margin-left:8px;">Processing...</span>' : '';
+        
         html += \`
           <div class="message">
             <div class="message-header">
               <span class="message-role" style="background:\${roleColor}">\${roleLabel}</span>
               \${statusText}
             </div>
-            \${content ? '<div class="message-content">' + renderMarkdown(content) + '</div>' : ''}
+            \${allContent ? '<div class="message-content">' + renderMarkdown(allContent) + '</div>' : ''}
             \${toolCallsHtml}
           </div>
         \`;
