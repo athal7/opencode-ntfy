@@ -587,12 +587,20 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
         
         // Extract text content from message parts
         let content = '';
+        let hasToolCalls = false;
         if (msg.parts) {
           for (const part of msg.parts) {
             if (part.type === 'text') {
               content += part.text;
+            } else if (part.type === 'tool') {
+              hasToolCalls = true;
             }
           }
+        }
+        
+        // If message has tool calls but we're not showing them, strip trailing colon
+        if (hasToolCalls && content.endsWith(':')) {
+          content = content.slice(0, -1).trimEnd();
         }
         
         // Skip messages with no text content (tool calls, system messages, etc.)
