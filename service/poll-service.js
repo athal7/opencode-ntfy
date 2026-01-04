@@ -135,7 +135,12 @@ export async function pollOnce(options = {}) {
     // Fetch items from source
     if (!skipMcp) {
       try {
-        items = await pollSource(sourceType, source.fetch || {});
+        // Include repo in fetch options for proper filtering
+        const fetchOpts = {
+          ...source.fetch,
+          repo: source.fetch?.repo || repoKey,
+        };
+        items = await pollSource(sourceType, fetchOpts);
         console.log(`[poll] Fetched ${items.length} items from ${sourceType} for ${repoKey}`);
       } catch (err) {
         console.error(`[poll] Error fetching from ${sourceType}: ${err.message}`);
