@@ -82,26 +82,28 @@ function buildContainerCommandArgs(item, config) {
     : `issue-${item.number || Date.now()}`;
 
   // Step 1: ocdc up command
-  const upArgs = ["ocdc", "up", sessionName, "--json"];
+  // --no-open prevents VS Code from opening (we just want container running)
+  const upArgs = ["ocdc", "up", sessionName, "--no-open", "--json"];
   if (config.action?.devcontainer_args) {
     upArgs.push(...config.action.devcontainer_args);
   }
 
   // Step 2: ocdc exec command to start opencode
+  // Use "opencode run" for non-interactive execution
   // We'll fill in --workspace after getting output from step 1
   const execArgs = ["ocdc", "exec", "--json", "--"];
-  execArgs.push("opencode");
+  execArgs.push("opencode", "run");
   execArgs.push("--session", sessionName);
   
-  // Add prompt from issue
-  const prompt = item.title || item.body || "";
-  if (prompt) {
-    execArgs.push("--prompt", prompt);
-  }
-
   // Add agent if specified
   if (config.session?.agent) {
     execArgs.push("--agent", config.session.agent);
+  }
+
+  // Add prompt from issue as the message
+  const prompt = item.title || item.body || "";
+  if (prompt) {
+    execArgs.push(prompt);
   }
 
   return { upArgs, execArgs, cwd: repoPath, sessionName };
