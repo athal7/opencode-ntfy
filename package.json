@@ -1,11 +1,12 @@
 {
-  "name": "opencode-ntfy",
+  "name": "opencode-pilot",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ntfy notification plugin for OpenCode with interactive permissions",
+  "description": "Automation layer for OpenCode - notifications, mobile UI, and workflow orchestration",
   "repository": {
     "type": "git",
-    "url": "https://github.com/athal7/opencode-ntfy.git"
+    "url": "https://github.com/athal7/opencode-pilot.git"
   },
   "author": "Andrew Thal <467872+athal7@users.noreply.github.com>",
   "license": "MIT",
