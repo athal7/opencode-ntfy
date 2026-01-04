@@ -669,8 +669,8 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
             const toolName = tool.tool || 'unknown';
             const description = tool.state?.input?.description || tool.state?.input?.prompt || '';
             const status = tool.state?.status || 'unknown';
-            const statusClass = status === 'running' ? 'running' : status === 'success' ? 'success' : 'error';
-            const statusLabel = status === 'running' ? '...' : status === 'success' ? '✓' : '✗';
+            const statusClass = status === 'running' ? 'running' : status === 'completed' ? 'success' : 'error';
+            const statusLabel = status === 'running' ? '...' : status === 'completed' ? '✓' : '✗';
             
             toolCallsHtml += \`
               <div class="tool-call">
@@ -699,8 +699,12 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       
       messagesListEl.innerHTML = html || '<div class="message"><div class="message-loading">No messages yet</div></div>';
       
-      // Scroll to bottom to show newest message
-      messagesListEl.scrollTop = messagesListEl.scrollHeight;
+      // Only auto-scroll if user is already near the bottom (within 100px)
+      // This prevents jumping when user is scrolled up reading old messages
+      const isNearBottom = messagesListEl.scrollHeight - messagesListEl.scrollTop - messagesListEl.clientHeight < 100;
+      if (isNearBottom) {
+        messagesListEl.scrollTop = messagesListEl.scrollHeight;
+      }
     }
     
     // Load session messages
