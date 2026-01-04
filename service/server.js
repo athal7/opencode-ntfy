@@ -213,6 +213,7 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       flex: 1;
       overflow-y: auto;
       margin-bottom: 16px;
+      padding-bottom: 16px;
       display: flex;
       flex-direction: column;
       gap: 12px;
