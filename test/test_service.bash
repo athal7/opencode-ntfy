@@ -427,6 +427,88 @@ test_service_api_chat_proxies_post() {
   fi
 }
 
+test_service_api_agent_proxies_get() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    const port = service.httpServer.address().port;
+    
+    // Use a random high port (59999) that's very unlikely to have a server
+    const res = await fetch('http://localhost:' + port + '/api/59999/agent');
+    
+    // We expect 502 Bad Gateway since there's no server on port 59999
+    // The important thing is the route exists and attempts to proxy (not 404)
+    if (res.status !== 502) {
+      console.log('FAIL: Expected 502 (proxy target unavailable), got ' + res.status);
+      process.exit(1);
+    }
+    
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
+test_service_api_provider_proxies_get() {
+  if ! command -v node &>/dev/null; then
+    echo "SKIP: node not available"
+    return 0
+  fi
+  
+  local result
+  result=$(node --experimental-vm-modules -e "
+    import { startService, stopService } from './service/server.js';
+    
+    const config = {
+      httpPort: 0,
+      socketPath: '/tmp/opencode-ntfy-test-' + process.pid + '.sock'
+    };
+    
+    const service = await startService(config);
+    const port = service.httpServer.address().port;
+    
+    // Use a random high port (59999) that's very unlikely to have a server
+    const res = await fetch('http://localhost:' + port + '/api/59999/provider');
+    
+    // We expect 502 Bad Gateway since there's no server on port 59999
+    // The important thing is the route exists and attempts to proxy (not 404)
+    if (res.status !== 502) {
+      console.log('FAIL: Expected 502 (proxy target unavailable), got ' + res.status);
+      process.exit(1);
+    }
+    
+    await stopService(service);
+    console.log('PASS');
+  " 2>&1) || {
+    echo "Functional test failed: $result"
+    return 1
+  }
+  
+  if ! echo "$result" | grep -q "PASS"; then
+    echo "$result"
+    return 1
+  fi
+}
+
 test_service_mobile_ui_fetches_messages_endpoint() {
   if ! command -v node &>/dev/null; then
     echo "SKIP: node not available"
@@ -1227,6 +1309,8 @@ for test_func in \
   test_service_mobile_page_has_text_input \
   test_service_api_session_proxies_get \
   test_service_api_chat_proxies_post \
+  test_service_api_agent_proxies_get \
+  test_service_api_provider_proxies_get \
   test_service_mobile_ui_fetches_messages_endpoint \
   test_service_mobile_ui_parses_message_info_role \
   test_service_mobile_ui_fetches_session_title \
