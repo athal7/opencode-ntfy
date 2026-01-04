@@ -212,25 +212,25 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
     .messages-list {
       flex: 1;
       overflow-y: auto;
-      margin-bottom: 16px;
-      padding-bottom: 16px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
       min-height: 0;
     }
     .message {
       background: #21262d;
       border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 16px;
+      border-radius: 6px;
+      padding: 12px;
     }
     .message-header {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 12px;
-      font-size: 13px;
+      margin-bottom: 8px;
+      font-size: 12px;
       color: #7d8590;
     }
     .message-role {
@@ -243,8 +243,8 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       text-transform: uppercase;
     }
     .message-content {
-      font-size: 15px;
-      line-height: 1.6;
+      font-size: 14px;
+      line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
       overflow-x: auto;
@@ -268,17 +268,17 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       color: #f85149;
     }
     .tool-calls {
-      margin-top: 12px;
+      margin-top: 8px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
     .tool-call {
       background: #161b22;
       border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 8px 12px;
-      font-size: 13px;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
     }
     .tool-call-name {
       color: #58a6ff;
