@@ -224,6 +224,15 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       line-height: 1.6;
       white-space: pre-wrap;
       word-break: break-word;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .message-content pre {
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .message-content code {
+      word-break: break-all;
     }
     .message-loading {
       text-align: center;
@@ -420,15 +429,25 @@ function mobileSessionPage({ repoName, sessionId, opencodePort }) {
       }
     }
     
-    // Render all messages in the conversation
+    // Render messages in the conversation (limit to last 20 for performance)
+    const MAX_MESSAGES = 20;
+    
     function renderMessages(messages) {
       if (!messages || messages.length === 0) {
         messagesListEl.innerHTML = '<div class="message"><div class="message-loading">No messages yet</div></div>';
         return;
       }
       
+      // Only show last N messages for performance
+      const recentMessages = messages.slice(-MAX_MESSAGES);
+      const skipped = messages.length - recentMessages.length;
+      
       let html = '';
-      for (const msg of messages) {
+      if (skipped > 0) {
+        html += '<div style="text-align:center;color:#7d8590;padding:8px;font-size:13px;">' + skipped + ' older messages not shown</div>';
+      }
+      
+      for (const msg of recentMessages) {
         const role = msg.info?.role || 'unknown';
         const isAssistant = role === 'assistant';
         const roleLabel = isAssistant ? 'Assistant' : 'You';
