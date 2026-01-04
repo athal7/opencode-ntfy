@@ -25,7 +25,7 @@ let configCache = null;
  */
 const DEFAULT_GLOBAL_CONFIG = {
   wip_limits: {
-    max_concurrent: 10,
+    max_concurrent: 1,
   },
 };
 
@@ -46,7 +46,7 @@ const DEFAULT_SOURCE = {
 const DEFAULT_CONFIG = {
   sources: [],
   wip_limits: {
-    max_concurrent: 3,
+    max_concurrent: 1,
   },
   readiness: {
     labels: {

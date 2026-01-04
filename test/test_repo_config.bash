@@ -110,8 +110,8 @@ test_repo_config_defaults() {
       console.log('FAIL: Missing wip_limits in defaults');
       process.exit(1);
     }
-    if (config.wip_limits.max_concurrent !== 3) {
-      console.log('FAIL: Expected default max_concurrent=3, got ' + config.wip_limits.max_concurrent);
+    if (config.wip_limits.max_concurrent !== 1) {
+      console.log('FAIL: Expected default max_concurrent=1, got ' + config.wip_limits.max_concurrent);
       process.exit(1);
     }
     console.log('PASS');
