@@ -67,7 +67,7 @@ const DEFAULT_CONFIG = {
     enabled: true,
     on: ["merged", "closed"],
     delay: "5m",
-    actions: ["kill_session", "stop_container"],
+    actions: ["kill_session"],
   },
 };
 
