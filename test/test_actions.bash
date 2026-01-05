@@ -54,16 +54,16 @@ test_actions_exports_build_command() {
 # Implementation Tests
 # =============================================================================
 
-test_actions_supports_local_type() {
-  grep -q "local" "$SERVICE_DIR/actions.js" || {
-    echo "Local action type not found"
+test_actions_uses_opencode_run() {
+  grep -q "opencode.*run" "$SERVICE_DIR/actions.js" || {
+    echo "opencode run command not found"
     return 1
   }
 }
 
-test_actions_supports_container_type() {
-  grep -q "container" "$SERVICE_DIR/actions.js" || {
-    echo "Container action type not found"
+test_actions_prompt_template() {
+  grep -q "prompt_template\|promptTemplate" "$SERVICE_DIR/actions.js" || {
+    echo "Prompt template support not found"
     return 1
   }
 }
@@ -75,9 +75,9 @@ test_actions_calls_opencode() {
   }
 }
 
-test_actions_calls_ocdc() {
-  grep -q "ocdc\|opencode-devcontainers" "$SERVICE_DIR/actions.js" || {
-    echo "ocdc/devcontainers invocation not found"
+test_actions_builds_prompt_from_item() {
+  grep -q "title\|body" "$SERVICE_DIR/actions.js" || {
+    echo "Prompt building from item not found"
     return 1
   }
 }
@@ -131,7 +131,7 @@ test_actions_build_local_command() {
   fi
 }
 
-test_actions_build_container_command() {
+test_actions_prompt_template_expansion() {
   if ! command -v node &>/dev/null; then
     echo "SKIP: node not available"
     return 0
@@ -142,22 +142,30 @@ test_actions_build_container_command() {
     import { buildCommand } from './service/actions.js';
     
     const item = {
-      title: 'Fix bug #123',
-      html_url: 'https://github.com/org/repo/issues/123',
-      number: 123,
-      branch: 'fix-123'
+      title: 'Fix bug',
+      body: 'Details here',
+      number: 456
     };
     
+    // Config with custom prompt template (e.g., for devcontainer)
     const config = {
       repo_path: '~/code/myrepo',
-      action: { type: 'container' },
-      session: { name_template: 'issue-{number}' }
+      session: { 
+        name_template: 'issue-{number}',
+        prompt_template: '/devcontainer issue-{number}\n\n{title}\n\n{body}'
+      }
     };
     
     const cmd = buildCommand(item, config);
     
-    if (!cmd.includes('ocdc') && !cmd.includes('devcontainer')) {
-      console.log('FAIL: Container command should include ocdc or devcontainer');
+    // Should include the expanded template
+    if (!cmd.includes('/devcontainer issue-456')) {
+      console.log('FAIL: Command should include expanded prompt template');
+      console.log('Got: ' + cmd);
+      process.exit(1);
+    }
+    if (!cmd.includes('Fix bug')) {
+      console.log('FAIL: Command should include title from template');
       process.exit(1);
     }
     console.log('PASS');
@@ -234,10 +242,10 @@ echo ""
 echo "Implementation Tests:"
 
 for test_func in \
-  test_actions_supports_local_type \
-  test_actions_supports_container_type \
+  test_actions_uses_opencode_run \
+  test_actions_prompt_template \
   test_actions_calls_opencode \
-  test_actions_calls_ocdc
+  test_actions_builds_prompt_from_item
 do
   run_test "${test_func#test_}" "$test_func"
 done
@@ -247,7 +255,7 @@ echo "Functional Tests:"
 
 for test_func in \
   test_actions_build_local_command \
-  test_actions_build_container_command \
+  test_actions_prompt_template_expansion \
   test_actions_session_name_template
 do
   run_test "${test_func#test_}" "$test_func"
