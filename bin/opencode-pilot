@@ -105,18 +105,63 @@ Usage:
   opencode-pilot <command> [options]
 
 Commands:
+  start         Start the callback service (foreground)
   setup         Copy plugin files and configure OpenCode
   status        Show installation and service status
   help          Show this help message
 
-The service (brew services start opencode-pilot) handles:
+The service handles:
 - Notification callbacks from ntfy
+- Mobile UI for responding to sessions
 - Polling for GitHub/Linear issues to work on
 
 Examples:
+  opencode-pilot start               # Start service (foreground)
   opencode-pilot setup               # Initial setup
   opencode-pilot status              # Check status
 `);
+}
+
+// ============================================================================
+// Start Command
+// ============================================================================
+
+async function startCommand() {
+  // Import and run the service directly
+  const serverPath = join(serviceDir, "server.js");
+  if (!existsSync(serverPath)) {
+    console.error("ERROR: Could not find server.js");
+    console.error(`Expected at: ${serverPath}`);
+    process.exit(1);
+  }
+
+  console.log("[opencode-pilot] Starting callback service...");
+  
+  // Dynamic import of the service module
+  const { startService, stopService } = await import(serverPath);
+  
+  const config = {
+    httpPort: parseInt(process.env.NTFY_CALLBACK_PORT || "4097", 10),
+    socketPath: process.env.NTFY_SOCKET_PATH || "/tmp/opencode-pilot.sock",
+  };
+  
+  const service = await startService(config);
+  
+  // Handle graceful shutdown
+  process.on("SIGTERM", async () => {
+    console.log("[opencode-pilot] Received SIGTERM, shutting down...");
+    await stopService(service);
+    process.exit(0);
+  });
+  
+  process.on("SIGINT", async () => {
+    console.log("[opencode-pilot] Received SIGINT, shutting down...");
+    await stopService(service);
+    process.exit(0);
+  });
+  
+  // Keep running until signal received
+  await new Promise(() => {});
 }
 
 // ============================================================================
@@ -252,16 +297,24 @@ function statusCommand() {
     console.log("Config: opencode.json not found");
   }
 
-  // Service running?
-  try {
-    const output = execSync("brew services list", { encoding: "utf8" });
-    if (output.includes("opencode-pilot") && output.includes("started")) {
-      console.log("Service: running");
-    } else {
-      console.log("Service: not running (run: brew services start opencode-pilot)");
+  // Service running? Check if socket exists and HTTP responds
+  const socketPath = "/tmp/opencode-pilot.sock";
+  const servicePort = getConfigValue("NTFY_CALLBACK_PORT", "callbackPort", "4097");
+  
+  if (existsSync(socketPath)) {
+    // Socket exists, try health check
+    try {
+      const res = execSync(`curl -s -o /dev/null -w "%{http_code}" http://localhost:${servicePort}/health`, { encoding: "utf8", timeout: 2000 });
+      if (res.trim() === "200") {
+        console.log("Service: running");
+      } else {
+        console.log("Service: socket exists but not responding (run: opencode-pilot start)");
+      }
+    } catch {
+      console.log("Service: socket exists but health check failed");
     }
-  } catch {
-    console.log("Service: unknown (brew not available)");
+  } else {
+    console.log("Service: not running (run: opencode-pilot start)");
   }
 
   // Notification configuration
@@ -304,6 +357,10 @@ async function main() {
   }
 
   switch (command) {
+    case "start":
+      await startCommand();
+      break;
+
     case "setup":
       await setupCommand();
       break;

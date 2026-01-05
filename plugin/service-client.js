@@ -6,12 +6,21 @@
 // - Session registration
 // - Nonce requests for permission notifications
 // - Permission response callbacks
+// - Auto-starting the service if not running
 
 import { createConnection } from 'net'
+import { spawn } from 'child_process'
+import { existsSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { debug } from './logger.js'
 
 // Default socket path (same as service)
-const DEFAULT_SOCKET_PATH = '/tmp/opencode-ntfy.sock'
+const DEFAULT_SOCKET_PATH = '/tmp/opencode-pilot.sock'
+
+// Get the plugin directory to find the service
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // Connection state
 let socket = null
@@ -37,10 +46,66 @@ export function setPermissionHandler(handler) {
 }
 
 /**
+ * Try to start the service if not running
+ * Spawns the service as a detached process
+ * @returns {Promise<boolean>} True if service was started or already running
+ */
+async function ensureServiceRunning() {
+  // Check if socket exists (service likely running)
+  if (existsSync(DEFAULT_SOCKET_PATH)) {
+    debug('Service socket exists, assuming service is running')
+    return true
+  }
+  
+  // Find the service directory - check relative paths from plugin
+  const candidates = [
+    join(__dirname, '..', 'service', 'server.js'),      // npm package structure
+    join(__dirname, '..', '..', 'service', 'server.js'), // development structure
+  ]
+  
+  let serverPath = null
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      serverPath = candidate
+      break
+    }
+  }
+  
+  if (!serverPath) {
+    debug('Could not find server.js, cannot auto-start service')
+    return false
+  }
+  
+  debug(`Auto-starting service from: ${serverPath}`)
+  
+  // Spawn service as detached process
+  const child = spawn('node', [serverPath], {
+    detached: true,
+    stdio: 'ignore',
+    env: { ...process.env },
+  })
+  
+  // Unref so parent can exit independently
+  child.unref()
+  
+  // Wait a bit for service to start and create socket
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  
+  // Check if socket was created
+  if (existsSync(DEFAULT_SOCKET_PATH)) {
+    debug('Service started successfully')
+    return true
+  }
+  
+  debug('Service did not start (socket not created)')
+  return false
+}
+
+/**
  * Connect to the callback service
  * @param {Object} options
  * @param {string} options.sessionId - OpenCode session ID
- * @param {string} [options.socketPath] - Unix socket path (default: /tmp/opencode-ntfy.sock)
+ * @param {string} [options.socketPath] - Unix socket path (default: /tmp/opencode-pilot.sock)
  * @returns {Promise<boolean>} True if connected successfully
  */
 export async function connectToService(options) {
@@ -48,6 +113,9 @@ export async function connectToService(options) {
   sessionId = options.sessionId
   
   debug(`Service connecting: socketPath=${socketPath}, sessionId=${sessionId}`)
+  
+  // Try to ensure service is running first
+  await ensureServiceRunning()
   
   return new Promise((resolve) => {
     // Create new socket and capture reference to avoid race conditions
@@ -131,6 +199,7 @@ export async function disconnectFromService() {
 /**
  * Try to reconnect to the callback service if disconnected
  * Uses the session ID from the last successful connection
+ * Will auto-start service if not running
  * @returns {Promise<boolean>} True if reconnected successfully
  */
 export async function tryReconnect() {
@@ -138,6 +207,9 @@ export async function tryReconnect() {
   if (isConnected()) {
     return true
   }
+  
+  // Try to ensure service is running
+  await ensureServiceRunning()
   
   // If we have a session ID from a previous connection, try to reconnect
   if (sessionId) {
