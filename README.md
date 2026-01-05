@@ -13,22 +13,19 @@ Automation layer for [OpenCode](https://github.com/sst/opencode) - notifications
 
 ## Installation
 
-```bash
-brew install athal7/tap/opencode-pilot
+Add the plugin to your `~/.config/opencode/opencode.json`:
 
-# Start the notification service
-brew services start opencode-pilot
+```json
+{
+  "plugin": ["opencode-pilot"]
+}
 ```
+
+OpenCode auto-installs npm plugins on startup.
 
 ## Quick Start
 
-1. **Run setup** to configure the plugin:
-
-   ```bash
-   opencode-pilot setup
-   ```
-
-2. **Create config** at `~/.config/opencode-pilot/config.json`:
+1. **Create config** at `~/.config/opencode-pilot/config.json`:
 
    ```json
    {
@@ -37,13 +34,13 @@ brew services start opencode-pilot
    }
    ```
 
-3. **Start the service**:
+2. **Start the service** (in a separate terminal):
 
    ```bash
-   brew services start opencode-pilot
+   npx opencode-pilot start
    ```
 
-4. **Run OpenCode** - notifications will be sent to your ntfy topic!
+3. **Run OpenCode** - notifications will be sent to your ntfy topic!
 
 ## Configuration
 
@@ -91,18 +88,17 @@ Environment variables override config file values:
 ## Service Management
 
 ```bash
-# Start the service (runs at login)
-brew services start opencode-pilot
+# Start the service (foreground)
+npx opencode-pilot start
 
 # Check status
-brew services info opencode-pilot
+npx opencode-pilot status
 
-# View logs
-tail -f $(brew --prefix)/var/log/opencode-pilot.log
-
-# Stop the service
-brew services stop opencode-pilot
+# View logs (if debug enabled)
+tail -f ~/.config/opencode-pilot/debug.log
 ```
+
+For persistent service management, consider using your system's service manager (launchd on macOS, systemd on Linux).
 
 ## Features in Detail
 
@@ -163,7 +159,7 @@ Then set `"callbackHttps": true` in your config.
 
 ### Permission buttons not working
 
-1. Ensure service is running: `brew services info opencode-pilot`
+1. Ensure service is running: `npx opencode-pilot status`
 2. Verify `callbackHost` is reachable from your phone
 3. Check service logs for errors
 
@@ -177,7 +173,7 @@ For detailed troubleshooting, enable debug logging in your config:
 }
 ```
 
-Debug logs are written to `~/.config/opencode-ntfy/debug.log` and include:
+Debug logs are written to `~/.config/opencode-pilot/debug.log` and include:
 - Events received from OpenCode
 - Idle timer start/cancel
 - Notification send attempts (success/failure)

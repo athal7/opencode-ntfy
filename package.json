@@ -1,17 +1,33 @@
 {
   "name": "opencode-pilot",
   "version": "0.19.2",
-  "private": true,
   "type": "module",
   "description": "Automation layer for OpenCode - notifications, mobile UI, and workflow orchestration",
+  "main": "plugin/index.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/athal7/opencode-pilot.git"
   },
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "notifications",
+    "automation",
+    "ntfy"
+  ],
   "author": "Andrew Thal <467872+athal7@users.noreply.github.com>",
   "license": "MIT",
+  "bin": {
+    "opencode-pilot": "./bin/opencode-pilot"
+  },
   "devDependencies": {
+    "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^9.2.6",
+    "@semantic-release/npm": "^12.0.0",
     "semantic-release": "^25.0.2"
   },
   "dependencies": {

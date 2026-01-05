@@ -22,7 +22,7 @@ After a PR is merged to main, follow this workflow to upgrade the local installa
 
 ### 1. Watch CI Run
 
-Watch the CI workflow until it completes (creates release via semantic-release):
+Watch the CI workflow until it completes (creates release via semantic-release and publishes to npm):
 
 ```bash
 gh run watch -R athal7/opencode-pilot
@@ -34,48 +34,29 @@ Confirm the new release was published:
 
 ```bash
 gh release list -R athal7/opencode-pilot -L 1
+npm view opencode-pilot version
 ```
 
-### 3. Wait for Homebrew Formula Update
+### 3. Restart OpenCode
 
-The formula is auto-updated after release. Poll until available:
+OpenCode auto-updates npm plugins. Simply restart any running OpenCode sessions to get the latest version.
+
+### 4. Restart Service
+
+If the callback service is running, restart it:
 
 ```bash
-brew update
-brew info athal7/tap/opencode-pilot | head -3
+# Stop current service (Ctrl+C) and restart
+npx opencode-pilot start
 ```
 
-Compare version with the release. If not updated yet, wait and retry.
-
-### 4. Upgrade Installation
+### 5. Verify Upgrade
 
 ```bash
-brew upgrade athal7/tap/opencode-pilot
+npx opencode-pilot status
 ```
 
-### 5. Run Setup
-
-Run setup to update plugin files in the OpenCode plugins directory:
-
-```bash
-opencode-pilot setup
-```
-
-### 6. Restart Service
-
-Always restart the callback service after upgrade:
-
-```bash
-brew services restart opencode-pilot
-```
-
-### 7. Verify Upgrade
-
-```bash
-opencode-pilot status
-```
-
-### 8. Config Migration (if needed)
+### 6. Config Migration (if needed)
 
 Check release notes for breaking changes:
 
