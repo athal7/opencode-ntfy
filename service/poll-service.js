@@ -13,6 +13,7 @@ import { loadRepoConfig, getRepoConfig, getAllSources } from "./repo-config.js";
 import { createPoller, pollSource } from "./poller.js";
 import { evaluateReadiness, sortByPriority } from "./readiness.js";
 import { executeAction, buildCommand } from "./actions.js";
+import { debug } from "./logger.js";
 import path from "path";
 import os from "os";
 
@@ -80,25 +81,34 @@ export async function pollOnce(options = {}) {
 
     // Evaluate readiness and filter
     const readyItems = items
-      .map((item) => ({
-        ...item,
-        repo_key: repoKey,
-        repo_path: repoPath,
-        repo_short: repoKey.split("/").pop(),
-        _readiness: evaluateReadiness(item, repoConfig),
-      }))
+      .map((item) => {
+        const readiness = evaluateReadiness(item, repoConfig);
+        debug(`Item ${item.id}: ready=${readiness.ready}, reason=${readiness.reason || 'none'}`);
+        return {
+          ...item,
+          repo_key: repoKey,
+          repo_path: repoPath,
+          repo_short: repoKey.split("/").pop(),
+          _readiness: readiness,
+        };
+      })
       .filter((item) => item._readiness.ready);
+    
+    debug(`${readyItems.length} items ready out of ${items.length}`);
 
     // Sort by priority
     const sortedItems = sortByPriority(readyItems, repoConfig);
 
     // Process ready items
+    debug(`Processing ${sortedItems.length} sorted items`);
     for (const item of sortedItems) {
       // Check if already processed
       if (pollerInstance && pollerInstance.isProcessed(item.id)) {
+        debug(`Skipping ${item.id} - already processed`);
         continue;
       }
 
+      debug(`Executing action for ${item.id}`);
       // Build action config
       const actionConfig = {
         ...repoConfig,
