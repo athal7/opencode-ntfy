@@ -73,10 +73,14 @@ console.log(JSON.stringify({ syncElapsed, elapsed }));
       const { syncElapsed, elapsed } = JSON.parse(result.trim());
       
       // debug() should be significantly faster than sync writes
-      // If sync takes 30ms+, async should be <5ms (just queuing)
+      // Async queuing should take <5ms regardless of sync speed
+      // When sync is slow (>10ms), async should be at least 3x faster
+      // When sync is fast (filesystem caching), just verify async is also fast
+      const isAsyncFast = elapsed < 5;
+      const isFasterThanSync = syncElapsed <= 10 || elapsed < syncElapsed / 3;
       assert.ok(
-        elapsed < syncElapsed / 3,
-        `debug() should be >3x faster than sync writes. Sync: ${syncElapsed}ms, debug(): ${elapsed}ms`
+        isAsyncFast && isFasterThanSync,
+        `debug() should be fast (<5ms) and faster than sync. Sync: ${syncElapsed}ms, debug(): ${elapsed}ms`
       );
       
       // Wait for async writes to complete
