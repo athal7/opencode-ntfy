@@ -1,6 +1,4 @@
-/devcontainer issue-{number}
-
-Work on this issue in an isolated devcontainer:
+Start a devcontainer for branch issue-{number} and work on this issue:
 
 {title}
 

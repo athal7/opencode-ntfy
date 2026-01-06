@@ -32,7 +32,6 @@ tools:
 # =============================================================================
 sources:
   # GitHub issues assigned to me - work in devcontainer
-  # The devcontainer template includes /devcontainer issue-{number} to set up isolation
   - name: my-issues
     tool:
       mcp: github
@@ -41,8 +40,8 @@ sources:
       q: "is:issue assignee:@me state:open"
     item:
       id: "{html_url}"
-    prompt: devcontainer            # Template includes /devcontainer command
-    agent: plan                     # Agent to use for session
+    prompt: devcontainer
+    agent: plan
 
   # GitHub PRs needing review
   - name: review-requests
@@ -70,5 +69,5 @@ sources:
     item:
       id: "linear:{id}"
     working_dir: ~/code/myproject
-    prompt: devcontainer            # Template includes /devcontainer command
+    prompt: devcontainer
     agent: plan
