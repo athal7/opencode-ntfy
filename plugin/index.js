@@ -48,7 +48,7 @@ export const PilotPlugin = async ({ $ }) => {
   } catch {
     // Not running, start it
     try {
-      await $`opencode-pilot start &`.quiet()
+      await $`npx opencode-pilot start &`.quiet()
     } catch {
       // Ignore start errors (maybe already starting)
     }
