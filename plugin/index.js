@@ -4,6 +4,7 @@
 // The plugin checks if the daemon is running and starts it if needed.
 
 import { existsSync, readFileSync } from 'fs'
+import { spawn } from 'child_process'
 import { join } from 'path'
 import { homedir } from 'os'
 import YAML from 'yaml'
@@ -33,7 +34,7 @@ function getPort() {
 /**
  * OpenCode plugin that auto-starts the daemon if not running
  */
-export const PilotPlugin = async ({ $ }) => {
+export const PilotPlugin = async () => {
   const port = getPort()
   
   try {
@@ -46,11 +47,15 @@ export const PilotPlugin = async ({ $ }) => {
       return {}
     }
   } catch {
-    // Not running, start it
+    // Not running, start it as detached background process
     try {
-      await $`npx opencode-pilot start &`.quiet()
+      const child = spawn('npx', ['opencode-pilot', 'start'], {
+        detached: true,
+        stdio: 'ignore',
+      })
+      child.unref()
     } catch {
-      // Ignore start errors (maybe already starting)
+      // Ignore start errors
     }
   }
   
