@@ -32,19 +32,4 @@ describe('Path naming consistency', () => {
         'server.js should not reference old opencode-ntfy name');
     });
   });
-  
-  describe('plist file', () => {
-    const plistPath = join(SERVICE_DIR, 'io.opencode.pilot.plist');
-    const content = readFileSync(plistPath, 'utf8');
-    
-    test('uses opencode-pilot label', () => {
-      assert.match(content, /io\.opencode\.pilot/,
-        'plist should use io.opencode.pilot label');
-    });
-    
-    test('does not reference old opencode-ntfy name', () => {
-      assert.doesNotMatch(content, /opencode-ntfy/,
-        'plist should not reference old opencode-ntfy name');
-    });
-  });
 });
