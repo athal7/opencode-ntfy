@@ -5,7 +5,16 @@ module.exports = {
   
   plugins: [
     // Analyze commits to determine release type
-    '@semantic-release/commit-analyzer',
+    // While in 0.x, breaking changes bump minor (not major) per semver spec
+    ['@semantic-release/commit-analyzer', {
+      releaseRules: [
+        { breaking: true, release: 'minor' },
+        { type: 'feat', release: 'minor' },
+        { type: 'fix', release: 'patch' },
+        { type: 'perf', release: 'patch' },
+        { type: 'refactor', release: 'patch' },
+      ]
+    }],
     
     // Generate release notes
     '@semantic-release/release-notes-generator',
