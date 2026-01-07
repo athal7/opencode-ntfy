@@ -324,9 +324,82 @@ export function createPoller(options = {}) {
     markProcessed(itemId, metadata = {}) {
       processedItems.set(itemId, {
         processedAt: new Date().toISOString(),
+        lastSeenAt: new Date().toISOString(),
         ...metadata,
       });
       saveState();
+    },
+    
+    /**
+     * Update lastSeenAt for items currently in poll results
+     * Call this after each poll to track which items are still present
+     * @param {string[]} itemIds - IDs of items in current poll results
+     */
+    markSeen(itemIds) {
+      const now = new Date().toISOString();
+      let changed = false;
+      for (const id of itemIds) {
+        const meta = processedItems.get(id);
+        if (meta) {
+          meta.lastSeenAt = now;
+          changed = true;
+        }
+      }
+      if (changed) saveState();
+    },
+    
+    /**
+     * Check if an item has reappeared after being missing from poll results
+     * @param {string} itemId - Item ID
+     * @returns {boolean} True if item was missing and has now reappeared
+     */
+    hasReappeared(itemId) {
+      const meta = processedItems.get(itemId);
+      if (!meta) return false;
+      if (!meta.lastSeenAt) return false;
+      
+      // If lastSeenAt is older than processedAt, the item disappeared and reappeared
+      // (lastSeenAt wasn't updated because item wasn't in poll results)
+      const lastSeen = new Date(meta.lastSeenAt).getTime();
+      const processed = new Date(meta.processedAt).getTime();
+      
+      // Item reappeared if it was last seen at processing time but not since
+      // We check if there's a gap of at least one poll interval (assume 5 min)
+      // Actually, simpler: if lastSeenAt equals processedAt after multiple polls,
+      // the item was missing. But we need to track poll cycles...
+      
+      // Simpler approach: track wasSeenInLastPoll flag
+      return meta.wasUnseen === true;
+    },
+    
+    /**
+     * Mark items that were NOT in poll results as unseen
+     * @param {string} sourceName - Source name
+     * @param {string[]} currentItemIds - IDs of items in current poll results
+     */
+    markUnseen(sourceName, currentItemIds) {
+      const currentSet = new Set(currentItemIds);
+      let changed = false;
+      for (const [id, meta] of processedItems) {
+        if (meta.source === sourceName) {
+          if (currentSet.has(id)) {
+            // Item is present - clear unseen flag, update lastSeenAt
+            if (meta.wasUnseen) {
+              meta.wasUnseen = false;
+              changed = true;
+            }
+            meta.lastSeenAt = new Date().toISOString();
+            changed = true;
+          } else {
+            // Item is missing - mark as unseen
+            if (!meta.wasUnseen) {
+              meta.wasUnseen = true;
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) saveState();
     },
     
     /**
@@ -350,6 +423,145 @@ export function createPoller(options = {}) {
      */
     getProcessedIds() {
       return Array.from(processedItems.keys());
+    },
+    
+    /**
+     * Get count of processed items, optionally filtered by source
+     * @param {string} [sourceName] - Optional source filter
+     * @returns {number} Count of entries
+     */
+    getProcessedCount(sourceName) {
+      if (!sourceName) return processedItems.size;
+      let count = 0;
+      for (const [, meta] of processedItems) {
+        if (meta.source === sourceName) count++;
+      }
+      return count;
+    },
+    
+    /**
+     * Clear all entries for a specific source
+     * @param {string} sourceName - Source name
+     * @returns {number} Number of entries removed
+     */
+    clearBySource(sourceName) {
+      let removed = 0;
+      for (const [id, meta] of processedItems) {
+        if (meta.source === sourceName) {
+          processedItems.delete(id);
+          removed++;
+        }
+      }
+      if (removed > 0) saveState();
+      return removed;
+    },
+    
+    /**
+     * Remove entries older than ttlDays
+     * @param {number} [ttlDays=30] - Days before expiration
+     * @returns {number} Number of entries removed
+     */
+    cleanupExpired(ttlDays = 30) {
+      const cutoffMs = Date.now() - (ttlDays * 24 * 60 * 60 * 1000);
+      let removed = 0;
+      for (const [id, meta] of processedItems) {
+        const processedAt = new Date(meta.processedAt).getTime();
+        if (processedAt < cutoffMs) {
+          processedItems.delete(id);
+          removed++;
+        }
+      }
+      if (removed > 0) saveState();
+      return removed;
+    },
+    
+    /**
+     * Remove entries for a source that are no longer in current items
+     * Only removes entries older than minAgeDays to avoid race conditions
+     * @param {string} sourceName - Source name to clean
+     * @param {string[]} currentItemIds - Current item IDs from source
+     * @param {number} [minAgeDays=1] - Minimum age before cleanup (0 = immediate)
+     * @returns {number} Number of entries removed
+     */
+    cleanupMissingFromSource(sourceName, currentItemIds, minAgeDays = 1) {
+      const currentSet = new Set(currentItemIds);
+      // Timestamp cutoff: entries processed before this time are eligible for cleanup
+      const cutoffTimestamp = Date.now() - (minAgeDays * 24 * 60 * 60 * 1000);
+      let removed = 0;
+      for (const [id, meta] of processedItems) {
+        if (meta.source === sourceName && !currentSet.has(id)) {
+          const processedAt = new Date(meta.processedAt).getTime();
+          // Use <= to allow immediate cleanup when minAgeDays=0
+          if (processedAt <= cutoffTimestamp) {
+            processedItems.delete(id);
+            removed++;
+          }
+        }
+      }
+      if (removed > 0) saveState();
+      return removed;
+    },
+    
+    /**
+     * Check if an item should be reprocessed based on state changes
+     * Uses reprocess_on config to determine which fields to check.
+     * Also reprocesses items that reappeared after being missing.
+     * 
+     * @param {object} item - Current item from source
+     * @param {object} [options] - Options
+     * @param {string[]} [options.reprocessOn] - Fields to check for changes (e.g., ['state', 'updated_at'])
+     * @returns {boolean} True if item should be reprocessed
+     */
+    shouldReprocess(item, options = {}) {
+      if (!item.id) return false;
+      
+      const meta = processedItems.get(item.id);
+      if (!meta) return false; // Not processed before
+      
+      // Check if item reappeared after being missing (e.g., uncompleted reminder)
+      if (meta.wasUnseen) {
+        return true;
+      }
+      
+      // Get reprocess_on fields from options, default to state/status only
+      // Note: updated_at is NOT included by default because our own changes would trigger reprocessing
+      const reprocessOn = options.reprocessOn || ['state', 'status'];
+      
+      // Check each configured field for changes
+      for (const field of reprocessOn) {
+        // Handle state/status fields (detect reopening)
+        if (field === 'state' || field === 'status') {
+          const storedState = meta.itemState;
+          const currentState = item[field];
+          
+          if (storedState && currentState) {
+            const stored = storedState.toLowerCase();
+            const current = currentState.toLowerCase();
+            
+            // Reopened: was closed/merged/done, now open/in-progress
+            if ((stored === 'closed' || stored === 'merged' || stored === 'done') 
+                && (current === 'open' || current === 'in progress')) {
+              return true;
+            }
+          }
+        }
+        
+        // Handle timestamp fields (detect updates)
+        if (field === 'updated_at' || field === 'updatedAt') {
+          const storedTimestamp = meta.itemUpdatedAt;
+          const currentTimestamp = item[field] || item.updated_at || item.updatedAt;
+          
+          if (storedTimestamp && currentTimestamp) {
+            const storedTime = new Date(storedTimestamp).getTime();
+            const currentTime = new Date(currentTimestamp).getTime();
+            if (currentTime > storedTime) {
+              return true;
+            }
+          }
+        }
+      }
+      
+      return false;
     },
   };
 }

@@ -106,6 +106,428 @@ describe('poller.js', () => {
       assert.strictEqual(poller.getProcessedIds().length, 0);
       assert.strictEqual(poller.isProcessed('item-1'), false);
     });
+
+    test('clearProcessed removes a single item', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test' });
+      poller.markProcessed('item-2', { source: 'test' });
+      
+      poller.clearProcessed('item-1');
+      
+      assert.strictEqual(poller.isProcessed('item-1'), false);
+      assert.strictEqual(poller.isProcessed('item-2'), true);
+    });
+  });
+
+  describe('cleanup methods', () => {
+    test('getProcessedCount returns total count', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      poller.markProcessed('item-3', { source: 'source-b' });
+      
+      assert.strictEqual(poller.getProcessedCount(), 3);
+    });
+
+    test('getProcessedCount filters by source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      poller.markProcessed('item-3', { source: 'source-b' });
+      
+      assert.strictEqual(poller.getProcessedCount('source-a'), 2);
+      assert.strictEqual(poller.getProcessedCount('source-b'), 1);
+      assert.strictEqual(poller.getProcessedCount('source-c'), 0);
+    });
+
+    test('clearBySource removes all entries for a source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      poller.markProcessed('item-3', { source: 'source-b' });
+      
+      const removed = poller.clearBySource('source-a');
+      
+      assert.strictEqual(removed, 2);
+      assert.strictEqual(poller.isProcessed('item-1'), false);
+      assert.strictEqual(poller.isProcessed('item-2'), false);
+      assert.strictEqual(poller.isProcessed('item-3'), true);
+    });
+
+    test('clearBySource returns 0 for unknown source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      
+      const removed = poller.clearBySource('unknown');
+      
+      assert.strictEqual(removed, 0);
+      assert.strictEqual(poller.isProcessed('item-1'), true);
+    });
+
+    test('cleanupExpired removes entries older than ttlDays', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      const { readFileSync } = await import('fs');
+      
+      const poller = createPoller({ stateFile });
+      
+      // Mark items as processed
+      poller.markProcessed('recent-item', { source: 'test' });
+      poller.markProcessed('old-item', { source: 'test' });
+      
+      // Manually modify the state file to make one item old
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 40); // 40 days ago
+      state.processed['old-item'].processedAt = oldDate.toISOString();
+      writeFileSync(stateFile, JSON.stringify(state, null, 2));
+      
+      // Create new poller to reload state
+      const poller2 = createPoller({ stateFile });
+      const removed = poller2.cleanupExpired(30);
+      
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(poller2.isProcessed('recent-item'), true);
+      assert.strictEqual(poller2.isProcessed('old-item'), false);
+    });
+
+    test('cleanupExpired uses default ttlDays of 30', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      const { readFileSync } = await import('fs');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-25-days', { source: 'test' });
+      poller.markProcessed('item-35-days', { source: 'test' });
+      
+      // Modify state file
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const date25 = new Date();
+      date25.setDate(date25.getDate() - 25);
+      const date35 = new Date();
+      date35.setDate(date35.getDate() - 35);
+      state.processed['item-25-days'].processedAt = date25.toISOString();
+      state.processed['item-35-days'].processedAt = date35.toISOString();
+      writeFileSync(stateFile, JSON.stringify(state, null, 2));
+      
+      const poller2 = createPoller({ stateFile });
+      const removed = poller2.cleanupExpired(); // No argument = default 30
+      
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(poller2.isProcessed('item-25-days'), true);
+      assert.strictEqual(poller2.isProcessed('item-35-days'), false);
+    });
+
+    test('cleanupMissingFromSource removes stale entries for a source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      const { readFileSync } = await import('fs');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test-source' });
+      poller.markProcessed('item-2', { source: 'test-source' });
+      poller.markProcessed('item-3', { source: 'other-source' });
+      
+      // Make items old enough to be cleaned (older than minAgeDays)
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 2); // 2 days ago
+      for (const id of Object.keys(state.processed)) {
+        state.processed[id].processedAt = oldDate.toISOString();
+      }
+      writeFileSync(stateFile, JSON.stringify(state, null, 2));
+      
+      const poller2 = createPoller({ stateFile });
+      // Current items only has item-1 (item-2 is missing from source)
+      const removed = poller2.cleanupMissingFromSource('test-source', ['item-1'], 1);
+      
+      assert.strictEqual(removed, 1); // item-2 removed
+      assert.strictEqual(poller2.isProcessed('item-1'), true);
+      assert.strictEqual(poller2.isProcessed('item-2'), false);
+      assert.strictEqual(poller2.isProcessed('item-3'), true); // different source
+    });
+
+    test('cleanupMissingFromSource respects minAgeDays', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test-source' });
+      poller.markProcessed('item-2', { source: 'test-source' });
+      
+      // Items are fresh (just processed), so minAgeDays=1 should protect them
+      const removed = poller.cleanupMissingFromSource('test-source', ['item-1'], 1);
+      
+      assert.strictEqual(removed, 0); // item-2 NOT removed (too recent)
+      assert.strictEqual(poller.isProcessed('item-2'), true);
+    });
+
+    test('cleanupMissingFromSource with minAgeDays=0 removes immediately', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test-source' });
+      poller.markProcessed('item-2', { source: 'test-source' });
+      
+      // minAgeDays=0 removes even fresh items
+      const removed = poller.cleanupMissingFromSource('test-source', ['item-1'], 0);
+      
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(poller.isProcessed('item-2'), false);
+    });
+
+    test('cleanup state persists across instances', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      
+      poller.clearBySource('source-a');
+      
+      // Verify persistence
+      const poller2 = createPoller({ stateFile });
+      assert.strictEqual(poller2.getProcessedCount(), 0);
+    });
+  });
+
+  describe('status tracking', () => {
+    test('shouldReprocess returns false for item with same state', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { source: 'test', itemState: 'open' });
+      
+      const item = { id: 'issue-1', state: 'open' };
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('shouldReprocess returns true for reopened issue (closed -> open)', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { source: 'test', itemState: 'closed' });
+      
+      const item = { id: 'issue-1', state: 'open' };
+      assert.strictEqual(poller.shouldReprocess(item), true);
+    });
+
+    test('shouldReprocess returns true for merged PR reopened', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('pr-1', { source: 'test', itemState: 'merged' });
+      
+      const item = { id: 'pr-1', state: 'open' };
+      assert.strictEqual(poller.shouldReprocess(item), true);
+    });
+
+    test('shouldReprocess returns false for item not in state', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      
+      const item = { id: 'new-issue', state: 'open' };
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('shouldReprocess returns false when no itemState was stored', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      // Legacy entry without itemState
+      poller.markProcessed('issue-1', { source: 'test' });
+      
+      const item = { id: 'issue-1', state: 'open' };
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('shouldReprocess uses status field for Linear items', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('linear-1', { source: 'test', itemState: 'Done' });
+      
+      // Linear uses 'status' field instead of 'state'
+      const item = { id: 'linear-1', status: 'In Progress' };
+      assert.strictEqual(poller.shouldReprocess(item), true);
+    });
+
+    test('shouldReprocess does NOT check updated_at by default (avoids self-triggering)', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { 
+        source: 'test', 
+        itemState: 'open',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      // Item was updated after being processed, but state is the same
+      const item = { 
+        id: 'issue-1', 
+        state: 'open',
+        updated_at: '2026-01-05T00:00:00Z'
+      };
+      // Should NOT reprocess because updated_at is not in default reprocessOn
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('shouldReprocess detects updated_at when explicitly configured', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { 
+        source: 'test', 
+        itemState: 'open',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      const item = { 
+        id: 'issue-1', 
+        state: 'open',
+        updated_at: '2026-01-05T00:00:00Z'
+      };
+      // Should reprocess when updated_at is explicitly in reprocessOn
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updated_at'] }), 
+        true
+      );
+    });
+
+    test('shouldReprocess returns false if updated_at is same or older', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { 
+        source: 'test', 
+        itemState: 'open',
+        itemUpdatedAt: '2026-01-05T00:00:00Z'
+      });
+      
+      // Item has same updated_at
+      const item = { 
+        id: 'issue-1', 
+        state: 'open',
+        updated_at: '2026-01-05T00:00:00Z'
+      };
+      // Even with explicit config, same timestamp should not trigger
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updated_at'] }), 
+        false
+      );
+    });
+
+    test('shouldReprocess respects reprocessOn config', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { 
+        source: 'test', 
+        itemState: 'closed',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      const item = { 
+        id: 'issue-1', 
+        state: 'open',  // Reopened
+        updated_at: '2026-01-05T00:00:00Z'  // Also updated
+      };
+      
+      // Only check updated_at, not state
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updated_at'] }), 
+        true
+      );
+      
+      // Only check state
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['state'] }), 
+        true
+      );
+      
+      // Check neither (empty array)
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: [] }), 
+        false
+      );
+    });
+
+    test('shouldReprocess handles Linear updatedAt field', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('linear-1', { 
+        source: 'test', 
+        itemState: 'In Progress',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      // Linear uses camelCase updatedAt
+      const item = { 
+        id: 'linear-1', 
+        status: 'In Progress',
+        updatedAt: '2026-01-05T00:00:00Z'
+      };
+      
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updatedAt'] }), 
+        true
+      );
+    });
+
+    test('shouldReprocess returns true for reappeared item (e.g., uncompleted reminder)', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('reminder-1', { source: 'reminders' });
+      
+      // Simulate: item disappears from poll (completed), then reappears (uncompleted)
+      poller.markUnseen('reminders', []); // Item not in results - marked unseen
+      
+      const item = { id: 'reminder-1' };
+      assert.strictEqual(poller.shouldReprocess(item), true);
+    });
+
+    test('shouldReprocess returns false for item that was always present', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('reminder-1', { source: 'reminders' });
+      
+      // Item stays in poll results
+      poller.markUnseen('reminders', ['reminder-1']);
+      
+      const item = { id: 'reminder-1' };
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('markUnseen tracks items across multiple polls', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test' });
+      poller.markProcessed('item-2', { source: 'test' });
+      
+      // Poll 1: both present
+      poller.markUnseen('test', ['item-1', 'item-2']);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-1' }), false);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-2' }), false);
+      
+      // Poll 2: item-2 disappears
+      poller.markUnseen('test', ['item-1']);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-1' }), false);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-2' }), true);
+      
+      // Poll 3: item-2 reappears - wasUnseen flag should still be true until cleared
+      // (The flag gets cleared when shouldReprocess triggers reprocessing)
+    });
   });
 
   describe('pollGenericSource', () => {

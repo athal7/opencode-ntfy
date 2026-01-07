@@ -6,6 +6,10 @@ _provider:
   mappings:
     body: title
     number: "url:/([A-Z0-9]+-[0-9]+)/"
+  # Reprocess items when status regresses (e.g., Done -> In Progress)
+  # Note: updatedAt is NOT included because our own changes would trigger reprocessing
+  reprocess_on:
+    - status       # Detect status changes (Done -> In Progress)
 
 # Presets
 my-issues:

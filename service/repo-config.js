@@ -302,6 +302,15 @@ export function findRepoByPath(searchPath) {
 }
 
 /**
+ * Get cleanup TTL days from config
+ * @returns {number} TTL in days (default: 30)
+ */
+export function getCleanupTtlDays() {
+  const config = getRawConfig();
+  return config?.cleanup?.ttl_days ?? 30;
+}
+
+/**
  * Clear config cache (for testing)
  */
 export function clearConfigCache() {
