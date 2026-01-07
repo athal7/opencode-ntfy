@@ -339,9 +339,8 @@ async function configCommand() {
         console.log(`      repo: ${source.repo}`);
       } else if (source.working_dir) {
         console.log(`      working_dir: ${source.working_dir}`);
-      } else {
-        console.log(`      working_dir: default`);
       }
+      // Don't show working_dir if it's just the default
     }
   }
 
