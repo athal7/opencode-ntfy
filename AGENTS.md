@@ -36,7 +36,15 @@ gh release list -R athal7/opencode-pilot -L 1
 npm view opencode-pilot version
 ```
 
-### 3. Restart Service
+### 3. Clear OpenCode Plugin Cache
+
+OpenCode caches plugins at `~/.cache/opencode/node_modules/`. Clear the cache to pick up the new version:
+
+```bash
+rm -rf ~/.cache/opencode/node_modules/opencode-pilot
+```
+
+### 4. Restart Service
 
 If the service is running, restart it:
 
@@ -45,7 +53,7 @@ If the service is running, restart it:
 npx opencode-pilot start
 ```
 
-### 4. Verify Upgrade
+### 5. Verify Upgrade
 
 ```bash
 npx opencode-pilot status
