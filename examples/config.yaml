@@ -83,6 +83,27 @@ sources:
 #       body: notes
 
 # =============================================================================
+# REPOS - Per-repository settings (OPTIONAL)
+#
+# Use this section when you need to:
+#   - Map GitHub repo names to local paths
+#   - Share config across multiple sources using YAML anchors
+#   - Set repo-specific prompts, branches, or session naming
+#
+# Note: For simple cases, use working_dir directly on sources instead.
+# =============================================================================
+# repos:
+#   myorg/backend: &backend-repo
+#     path: ~/code/backend
+#     prompt: worktree
+#     session:
+#       name: "issue-{number}"
+#
+#   myorg/frontend:
+#     <<: *backend-repo              # Inherit settings via YAML anchor
+#     path: ~/code/frontend
+
+# =============================================================================
 # Available presets (no tools config needed):
 #   github/my-issues        - Issues assigned to me
 #   github/review-requests  - PRs needing my review  
