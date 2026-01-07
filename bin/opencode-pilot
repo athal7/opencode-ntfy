@@ -247,13 +247,7 @@ async function configCommand() {
     process.exit(1);
   }
 
-  // Validate defaults section
-  console.log("");
-  console.log("Defaults:");
   const defaults = config.defaults || {};
-  console.log(`  working_dir: ${defaults.working_dir || "~"}`);
-  if (defaults.agent) console.log(`  agent: ${defaults.agent}`);
-  if (defaults.model) console.log(`  model: ${defaults.model}`);
 
   // Validate repos section
   console.log("");
@@ -313,9 +307,11 @@ async function configCommand() {
         console.log(`  ✓ ${name}: ${tool.mcp}/${tool.name}`);
       }
       
-      // Show prompt
+      // Show prompt and agent
       const prompt = source.prompt || defaults.prompt || "default";
-      console.log(`      prompt: ${prompt}`);
+      const agent = source.agent || defaults.agent;
+      const promptAgent = agent ? `${prompt} (agent: ${agent})` : prompt;
+      console.log(`      prompt: ${promptAgent}`);
       
       // Show repo resolution - interpolate template with configured repos
       if (source.repos) {
