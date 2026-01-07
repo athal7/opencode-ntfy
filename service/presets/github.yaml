@@ -40,7 +40,14 @@ my-prs-feedback:
     mcp: github
     name: search_issues
   args:
-    q: "is:pr author:@me state:open review:changes_requested"
+    # Catches PRs with any review activity (comments, reviews, or changes requested)
+    # Note: comments:>0 includes both review comments and issue comments
+    q: "is:pr author:@me state:open comments:>0"
   item:
     id: "{html_url}"
   repo: "{repository_full_name}"
+  # Reprocess when PR is updated (new commits pushed, new comments, etc.)
+  # This ensures we re-trigger after addressing review feedback
+  reprocess_on:
+    - state
+    - updated_at

@@ -154,8 +154,8 @@ export async function pollOnce(options = {}) {
     const sortedItems = sortByPriority(readyItems, sortConfig);
 
     // Process ready items
-    // Get reprocess_on config from provider (e.g., ['state', 'updated_at'] for GitHub)
-    const reprocessOn = toolProviderConfig?.reprocess_on || source.reprocess_on;
+    // Get reprocess_on config: source-level overrides provider-level
+    const reprocessOn = source.reprocess_on || toolProviderConfig?.reprocess_on;
     
     debug(`Processing ${sortedItems.length} sorted items`);
     for (const item of sortedItems) {

@@ -565,7 +565,9 @@ sources:
       const sources = getSources();
 
       assert.strictEqual(sources[0].name, 'my-prs-feedback');
-      assert.strictEqual(sources[0].args.q, 'is:pr author:@me state:open review:changes_requested');
+      assert.strictEqual(sources[0].args.q, 'is:pr author:@me state:open comments:>0');
+      // This preset includes updated_at in reprocess_on to catch new commits
+      assert.deepStrictEqual(sources[0].reprocess_on, ['state', 'updated_at']);
     });
 
     test('expands linear/my-issues preset with required args', async () => {
