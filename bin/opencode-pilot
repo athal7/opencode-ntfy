@@ -252,7 +252,6 @@ async function configCommand() {
   console.log("Defaults:");
   const defaults = config.defaults || {};
   console.log(`  working_dir: ${defaults.working_dir || "~"}`);
-  console.log(`  prompt: ${defaults.prompt || "default"}`);
   if (defaults.agent) console.log(`  agent: ${defaults.agent}`);
   if (defaults.model) console.log(`  model: ${defaults.model}`);
 
@@ -314,15 +313,29 @@ async function configCommand() {
         console.log(`  ✓ ${name}: ${tool.mcp}/${tool.name}`);
       }
       
-      // Show repo resolution
-      if (source.repo) {
+      // Show prompt
+      const prompt = source.prompt || defaults.prompt || "default";
+      console.log(`      prompt: ${prompt}`);
+      
+      // Show repo resolution - interpolate template with configured repos
+      if (source.repos) {
+        // Explicit repos filter
+        console.log(`      repos: ${source.repos.join(", ")}`);
+      } else if (source.repo && source.repo.includes("{")) {
+        // Template like {repository_full_name} - show which configured repos could match
+        const configuredRepos = Object.keys(config.repos || {});
+        if (configuredRepos.length > 0) {
+          console.log(`      repos: ${configuredRepos.join(", ")} (from config)`);
+        } else {
+          console.log(`      repos: (none configured)`);
+        }
+      } else if (source.repo) {
+        // Static repo
         console.log(`      repo: ${source.repo}`);
-      } else if (source.repos) {
-        console.log(`      repos: ${Array.isArray(source.repos) ? source.repos.join(", ") : JSON.stringify(source.repos)}`);
       } else if (source.working_dir) {
         console.log(`      working_dir: ${source.working_dir}`);
       } else {
-        console.log(`      (uses defaults.working_dir)`);
+        console.log(`      working_dir: ~ (default)`);
       }
     }
   }
