@@ -1,0 +1,19 @@
+# Linear source presets
+
+# Provider-level config (applies to all Linear presets)
+_provider:
+  response_key: nodes
+  mappings:
+    body: title
+    number: "url:/([A-Z0-9]+-[0-9]+)/"
+
+# Presets
+my-issues:
+  name: my-issues
+  tool:
+    mcp: linear
+    name: list_issues
+  args: {}
+    # teamId and assigneeId are required - user must provide
+  item:
+    id: "linear:{id}"

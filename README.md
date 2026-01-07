@@ -9,6 +9,7 @@ Automation daemon for [OpenCode](https://github.com/sst/opencode) - polls for wo
 - **Polling automation** - Automatically start sessions from GitHub issues, Linear tickets, etc.
 - **Readiness evaluation** - Check labels, dependencies, and priority before starting work
 - **Template-based prompts** - Customize prompts with placeholders for issue data
+- **Built-in presets** - Common patterns like "my GitHub issues" work out of the box
 
 ## Installation
 
@@ -44,9 +45,25 @@ See [examples/config.yaml](examples/config.yaml) for a complete example with all
 
 ### Key Sections
 
-- **`sources`** - What to poll (GitHub issues, Linear tickets, etc.)
+- **`defaults`** - Default values applied to all sources
+- **`sources`** - What to poll (presets, shorthand, or full config)
 - **`tools`** - Field mappings to normalize different MCP APIs
 - **`repos`** - Repository paths and settings (use YAML anchors to share config)
+
+### Source Syntax
+
+Three ways to configure sources, from simplest to most flexible:
+
+1. **Presets** - Built-in definitions for common patterns (`github/my-issues`, `github/review-requests`, etc.)
+2. **GitHub shorthand** - Simple `github: "query"` syntax for custom GitHub searches
+3. **Full syntax** - Complete control with `tool`, `args`, and `item` for any MCP source
+
+### Available Presets
+
+- `github/my-issues` - Issues assigned to me
+- `github/review-requests` - PRs needing my review
+- `github/my-prs-feedback` - My PRs with change requests
+- `linear/my-issues` - Linear tickets (requires `teamId`, `assigneeId`)
 
 ### Prompt Templates
 
