@@ -477,4 +477,217 @@ repos:
       assert.strictEqual(repoKey, null);
     });
   });
+
+  describe('presets', () => {
+    test('expands github/my-issues preset', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/my-issues
+    prompt: worktree
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources.length, 1);
+      assert.strictEqual(sources[0].name, 'my-issues');
+      assert.deepStrictEqual(sources[0].tool, { mcp: 'github', name: 'search_issues' });
+      assert.strictEqual(sources[0].args.q, 'is:issue assignee:@me state:open');
+      assert.strictEqual(sources[0].item.id, '{html_url}');
+      assert.strictEqual(sources[0].prompt, 'worktree');
+    });
+
+    test('expands github/review-requests preset', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/review-requests
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].name, 'review-requests');
+      assert.strictEqual(sources[0].args.q, 'is:pr review-requested:@me state:open');
+    });
+
+    test('expands github/my-prs-feedback preset', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/my-prs-feedback
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].name, 'my-prs-feedback');
+      assert.strictEqual(sources[0].args.q, 'is:pr author:@me state:open review:changes_requested');
+    });
+
+    test('expands linear/my-issues preset with required args', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: linear/my-issues
+    args:
+      teamId: "team-uuid-123"
+      assigneeId: "user-uuid-456"
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].name, 'my-issues');
+      assert.deepStrictEqual(sources[0].tool, { mcp: 'linear', name: 'list_issues' });
+      assert.strictEqual(sources[0].args.teamId, 'team-uuid-123');
+      assert.strictEqual(sources[0].args.assigneeId, 'user-uuid-456');
+    });
+
+    test('user config overrides preset values', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/my-issues
+    name: custom-name
+    args:
+      q: "is:issue assignee:@me state:open label:urgent"
+    agent: plan
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].name, 'custom-name');
+      assert.strictEqual(sources[0].args.q, 'is:issue assignee:@me state:open label:urgent');
+      assert.strictEqual(sources[0].agent, 'plan');
+    });
+
+    test('throws error for unknown preset', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: unknown/preset
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      
+      assert.throws(() => getSources(), /Unknown preset: unknown\/preset/);
+    });
+  });
+
+  describe('shorthand syntax', () => {
+    test('expands github shorthand to full source', async () => {
+      writeFileSync(configPath, `
+sources:
+  - name: my-issues
+    github: "is:issue assignee:@me state:open"
+    prompt: worktree
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources.length, 1);
+      assert.strictEqual(sources[0].name, 'my-issues');
+      assert.deepStrictEqual(sources[0].tool, { mcp: 'github', name: 'search_issues' });
+      assert.strictEqual(sources[0].args.q, 'is:issue assignee:@me state:open');
+      assert.strictEqual(sources[0].item.id, '{html_url}');
+      assert.strictEqual(sources[0].prompt, 'worktree');
+    });
+
+    test('shorthand works with other source fields', async () => {
+      writeFileSync(configPath, `
+sources:
+  - name: urgent-issues
+    github: "is:issue assignee:@me label:urgent"
+    agent: plan
+    working_dir: ~/code/myproject
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].agent, 'plan');
+      assert.strictEqual(sources[0].working_dir, '~/code/myproject');
+    });
+  });
+
+  describe('defaults section', () => {
+    test('applies defaults to sources without those fields', async () => {
+      writeFileSync(configPath, `
+defaults:
+  agent: plan
+  prompt: default
+
+sources:
+  - preset: github/my-issues
+  - preset: github/review-requests
+    prompt: review
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      // First source gets both defaults
+      assert.strictEqual(sources[0].agent, 'plan');
+      assert.strictEqual(sources[0].prompt, 'default');
+      
+      // Second source overrides prompt but gets agent default
+      assert.strictEqual(sources[1].agent, 'plan');
+      assert.strictEqual(sources[1].prompt, 'review');
+    });
+
+    test('source values override defaults', async () => {
+      writeFileSync(configPath, `
+defaults:
+  agent: plan
+  model: claude-3-sonnet
+
+sources:
+  - preset: github/my-issues
+    agent: architect
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].agent, 'architect');
+      assert.strictEqual(sources[0].model, 'claude-3-sonnet');
+    });
+
+    test('getDefaults returns defaults section', async () => {
+      writeFileSync(configPath, `
+defaults:
+  agent: plan
+  prompt: default
+  working_dir: ~/code
+`);
+
+      const { loadRepoConfig, getDefaults } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const defaults = getDefaults();
+
+      assert.strictEqual(defaults.agent, 'plan');
+      assert.strictEqual(defaults.prompt, 'default');
+      assert.strictEqual(defaults.working_dir, '~/code');
+    });
+
+    test('getDefaults returns empty object when no defaults', async () => {
+      writeFileSync(configPath, `
+sources: []
+`);
+
+      const { loadRepoConfig, getDefaults } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const defaults = getDefaults();
+
+      assert.deepStrictEqual(defaults, {});
+    });
+  });
 });

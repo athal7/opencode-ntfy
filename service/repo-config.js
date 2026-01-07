@@ -3,8 +3,9 @@
  *
  * Manages configuration stored in ~/.config/opencode-pilot/config.yaml
  * Supports:
+ * - defaults: default values applied to all sources
  * - repos: per-repository settings (use YAML anchors for sharing)
- * - sources: polling sources with generic tool references
+ * - sources: polling sources with generic tool references, presets, or shorthand
  * - tools: field mappings for normalizing MCP responses
  * - templates: prompt templates stored as markdown files
  */
@@ -14,6 +15,7 @@ import path from "path";
 import os from "os";
 import YAML from "yaml";
 import { getNestedValue } from "./utils.js";
+import { expandPreset, expandGitHubShorthand } from "./presets/index.js";
 
 // Default config path
 const DEFAULT_CONFIG_PATH = path.join(
@@ -101,12 +103,52 @@ export function getRepoConfig(repoKey) {
 }
 
 /**
+ * Normalize a single source config
+ * Expands presets, shorthand syntax, and applies defaults
+ * @param {object} source - Raw source config
+ * @param {object} defaults - Default values to apply
+ * @returns {object} Normalized source config
+ */
+function normalizeSource(source, defaults) {
+  let normalized = { ...source };
+
+  // Expand preset if present
+  if (source.preset) {
+    normalized = expandPreset(source.preset, source);
+  }
+
+  // Expand GitHub shorthand if present
+  if (source.github) {
+    normalized = expandGitHubShorthand(source.github, source);
+  }
+
+  // Apply defaults (source values take precedence)
+  return {
+    ...defaults,
+    ...normalized,
+  };
+}
+
+/**
  * Get all top-level sources (for polling)
- * @returns {Array} Array of source configurations
+ * Expands presets and shorthand syntax, applies defaults
+ * @returns {Array} Array of normalized source configurations
  */
 export function getSources() {
   const config = getRawConfig();
-  return config.sources || [];
+  const rawSources = config.sources || [];
+  const defaults = config.defaults || {};
+
+  return rawSources.map((source) => normalizeSource(source, defaults));
+}
+
+/**
+ * Get defaults section from config
+ * @returns {object} Defaults configuration or empty object
+ */
+export function getDefaults() {
+  const config = getRawConfig();
+  return config.defaults || {};
 }
 
 /**
