@@ -324,9 +324,82 @@ export function createPoller(options = {}) {
     markProcessed(itemId, metadata = {}) {
       processedItems.set(itemId, {
         processedAt: new Date().toISOString(),
+        lastSeenAt: new Date().toISOString(),
         ...metadata,
       });
       saveState();
+    },
+    
+    /**
+     * Update lastSeenAt for items currently in poll results
+     * Call this after each poll to track which items are still present
+     * @param {string[]} itemIds - IDs of items in current poll results
+     */
+    markSeen(itemIds) {
+      const now = new Date().toISOString();
+      let changed = false;
+      for (const id of itemIds) {
+        const meta = processedItems.get(id);
+        if (meta) {
+          meta.lastSeenAt = now;
+          changed = true;
+        }
+      }
+      if (changed) saveState();
+    },
+    
+    /**
+     * Check if an item has reappeared after being missing from poll results
+     * @param {string} itemId - Item ID
+     * @returns {boolean} True if item was missing and has now reappeared
+     */
+    hasReappeared(itemId) {
+      const meta = processedItems.get(itemId);
+      if (!meta) return false;
+      if (!meta.lastSeenAt) return false;
+      
+      // If lastSeenAt is older than processedAt, the item disappeared and reappeared
+      // (lastSeenAt wasn't updated because item wasn't in poll results)
+      const lastSeen = new Date(meta.lastSeenAt).getTime();
+      const processed = new Date(meta.processedAt).getTime();
+      
+      // Item reappeared if it was last seen at processing time but not since
+      // We check if there's a gap of at least one poll interval (assume 5 min)
+      // Actually, simpler: if lastSeenAt equals processedAt after multiple polls,
+      // the item was missing. But we need to track poll cycles...
+      
+      // Simpler approach: track wasSeenInLastPoll flag
+      return meta.wasUnseen === true;
+    },
+    
+    /**
+     * Mark items that were NOT in poll results as unseen
+     * @param {string} sourceName - Source name
+     * @param {string[]} currentItemIds - IDs of items in current poll results
+     */
+    markUnseen(sourceName, currentItemIds) {
+      const currentSet = new Set(currentItemIds);
+      let changed = false;
+      for (const [id, meta] of processedItems) {
+        if (meta.source === sourceName) {
+          if (currentSet.has(id)) {
+            // Item is present - clear unseen flag, update lastSeenAt
+            if (meta.wasUnseen) {
+              meta.wasUnseen = false;
+              changed = true;
+            }
+            meta.lastSeenAt = new Date().toISOString();
+            changed = true;
+          } else {
+            // Item is missing - mark as unseen
+            if (!meta.wasUnseen) {
+              meta.wasUnseen = true;
+              changed = true;
+            }
+          }
+        }
+      }
+      if (changed) saveState();
     },
     
     /**
@@ -432,6 +505,7 @@ export function createPoller(options = {}) {
     /**
      * Check if an item should be reprocessed based on state changes
      * Uses reprocess_on config to determine which fields to check.
+     * Also reprocesses items that reappeared after being missing.
      * 
      * @param {object} item - Current item from source
      * @param {object} [options] - Options
@@ -443,6 +517,11 @@ export function createPoller(options = {}) {
       
       const meta = processedItems.get(item.id);
       if (!meta) return false; // Not processed before
+      
+      // Check if item reappeared after being missing (e.g., uncompleted reminder)
+      if (meta.wasUnseen) {
+        return true;
+      }
       
       // Get reprocess_on fields from options, default to state/status only
       // Note: updated_at is NOT included by default because our own changes would trigger reprocessing

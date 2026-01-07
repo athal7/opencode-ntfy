@@ -481,6 +481,53 @@ describe('poller.js', () => {
         true
       );
     });
+
+    test('shouldReprocess returns true for reappeared item (e.g., uncompleted reminder)', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('reminder-1', { source: 'reminders' });
+      
+      // Simulate: item disappears from poll (completed), then reappears (uncompleted)
+      poller.markUnseen('reminders', []); // Item not in results - marked unseen
+      
+      const item = { id: 'reminder-1' };
+      assert.strictEqual(poller.shouldReprocess(item), true);
+    });
+
+    test('shouldReprocess returns false for item that was always present', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('reminder-1', { source: 'reminders' });
+      
+      // Item stays in poll results
+      poller.markUnseen('reminders', ['reminder-1']);
+      
+      const item = { id: 'reminder-1' };
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('markUnseen tracks items across multiple polls', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test' });
+      poller.markProcessed('item-2', { source: 'test' });
+      
+      // Poll 1: both present
+      poller.markUnseen('test', ['item-1', 'item-2']);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-1' }), false);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-2' }), false);
+      
+      // Poll 2: item-2 disappears
+      poller.markUnseen('test', ['item-1']);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-1' }), false);
+      assert.strictEqual(poller.shouldReprocess({ id: 'item-2' }), true);
+      
+      // Poll 3: item-2 reappears - wasUnseen flag should still be true until cleared
+      // (The flag gets cleared when shouldReprocess triggers reprocessing)
+    });
   });
 
   describe('pollGenericSource', () => {

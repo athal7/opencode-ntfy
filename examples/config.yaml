@@ -1,134 +1,54 @@
 # Example config.yaml for opencode-pilot
-#
-# Copy to ~/.config/opencode-pilot/config.yaml and customize
-# Also create templates/ directory with prompt template files
+# Copy to ~/.config/opencode-pilot/config.yaml
 
-# =============================================================================
-# DEFAULTS - Applied to all sources (source values override these)
-# =============================================================================
 defaults:
-  agent: plan                        # Default agent for all sources
-  prompt: default                    # Default prompt template
+  agent: plan
+  prompt: default
 
-# =============================================================================
-# SOURCES - What to poll
-#
-# Three syntax options:
-#   1. Presets: Use built-in presets for common patterns
-#   2. Shorthand: Use `github: "query"` for GitHub sources
-#   3. Full: Specify tool, args, item for custom sources
-# =============================================================================
 sources:
-  # ----- PRESET SYNTAX (recommended for common patterns) -----
-  
-  # GitHub issues assigned to me
+  # Presets - common patterns with sensible defaults
   - preset: github/my-issues
     prompt: worktree
 
-  # GitHub PRs needing my review
   - preset: github/review-requests
     prompt: review
 
-  # My PRs that have change requests (filter to specific repos)
   - preset: github/my-prs-feedback
     prompt: review-feedback
-    repos:                           # Optional: filter to specific repos
-      - myorg/backend
-      - myorg/frontend
+    repos: [myorg/backend, myorg/frontend]  # Optional: filter repos
 
-  # Linear issues (requires teamId and assigneeId)
-  # Find IDs via: opencode-pilot discover linear
+  # Linear (requires teamId and assigneeId)
   - preset: linear/my-issues
     args:
-      teamId: "your-team-uuid"      # Replace with actual team UUID
-      assigneeId: "your-user-uuid"  # Replace with actual user UUID
+      teamId: "your-team-uuid"
+      assigneeId: "your-user-uuid"
       status: "In Progress"
     working_dir: ~/code/myproject
     prompt: worktree
 
-  # ----- SHORTHAND SYNTAX (for custom GitHub queries) -----
-  
-  # Custom GitHub query with shorthand
+  # GitHub shorthand syntax
   # - name: urgent-issues
   #   github: "is:issue assignee:@me label:urgent state:open"
-  #   prompt: worktree
 
-  # ----- FULL SYNTAX (for non-GitHub sources or full control) -----
-  
-  # Apple Reminders example (requires tools config below)
+  # Full syntax for custom MCP sources (e.g., Apple Reminders)
   # - name: agent-tasks
-  #   tool:
-  #     mcp: apple-reminders
-  #     name: list_reminders
-  #   args:
-  #     list_name: "Agent Tasks"
-  #     completed: false
-  #   item:
-  #     id: "reminder:{id}"
-  #   prompt: agent-planning
-  #   working_dir: ~
+  #   tool: { mcp: apple-reminders, name: list_reminders }
+  #   args: { list_name: "Agent Tasks", completed: false }
+  #   item: { id: "reminder:{id}" }
 
-# =============================================================================
-# TOOLS - Field mappings for custom MCP servers (OPTIONAL)
-#
-# Note: GitHub and Linear presets include built-in mappings.
-# Only needed for custom sources or to override preset defaults.
-#
-# Each tool provider can specify:
-#   response_key: Key to extract array from response (e.g., "reminders")
-#   mappings: Field name translations (e.g., { body: "notes" })
-#   reprocess_on: Fields that trigger reprocessing (state/status changes)
-# =============================================================================
+# Tool config for custom MCP servers (GitHub/Linear have built-in config)
 # tools:
 #   apple-reminders:
 #     response_key: reminders
-#     mappings:
-#       title: name
-#       body: notes
-#     # Apple Reminders doesn't have a state field like GitHub/Linear.
-#     # Reminders are either in the list (incomplete) or not (completed/deleted).
-#     # Source-aware cleanup handles completed reminders automatically -
-#     # they won't appear in the poll results and their state entries expire.
-#     # No reprocess_on needed for typical reminder workflows.
+#     mappings: { title: name, body: notes }
 
-# =============================================================================
-# REPOS - Map GitHub repos to local paths (OPTIONAL)
-#
-# GitHub presets automatically resolve the repo from each item's
-# repository.full_name field. Add entries here to map repos to local paths.
-# =============================================================================
+# Map repos to local paths
 # repos:
-#   myorg/backend:
-#     path: ~/code/backend
-#
-#   myorg/frontend:
-#     path: ~/code/frontend
+#   myorg/backend: { path: ~/code/backend }
 
-# =============================================================================
-# CLEANUP - Automatic state cleanup (OPTIONAL)
-#
-# Poll state entries are automatically cleaned up:
-# - TTL-based: Entries older than ttl_days are removed on startup
-# - Source-aware: Entries for items no longer returned by a source are removed
-#   (only if older than 1 day, to avoid false positives from API issues)
-# - Status-aware: Items are automatically reprocessed based on reprocess_on config
-#
-# Built-in presets include sensible reprocess_on defaults:
-# - GitHub: reprocess_on: [state]   # Reopened issues (closed -> open)
-# - Linear: reprocess_on: [status]  # Status regression (Done -> In Progress)
-#
-# Note: updated_at is NOT included by default because your own changes
-# (commits, comments) would trigger unwanted reprocessing.
-#
-# Manual cleanup: opencode-pilot clear [--all | --source NAME | --item ID]
-# =============================================================================
+# Cleanup config (optional, has sensible defaults)
 # cleanup:
-#   ttl_days: 30  # Days before entries expire (default: 30)
+#   ttl_days: 30  # Remove state entries older than N days
 
-# =============================================================================
-# Available presets (no tools config needed):
-#   github/my-issues        - Issues assigned to me
-#   github/review-requests  - PRs needing my review  
-#   github/my-prs-feedback  - My PRs with change requests
-#   linear/my-issues        - Linear tickets (requires teamId, assigneeId)
-# =============================================================================
+# Available presets: github/my-issues, github/review-requests,
+# github/my-prs-feedback, linear/my-issues

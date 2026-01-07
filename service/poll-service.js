@@ -219,10 +219,15 @@ export async function pollOnce(options = {}) {
       }
     }
 
-    // Clean up state entries for items no longer returned by this source
-    // Only removes entries older than 1 day to avoid race conditions with API issues
+    // Track which items are present/missing for reappearance detection
+    // Also clean up state entries for items no longer returned by this source
     if (pollerInstance && items.length > 0) {
       const currentItemIds = items.map(item => item.id);
+      
+      // Mark items as seen/unseen for reappearance detection
+      pollerInstance.markUnseen(sourceName, currentItemIds);
+      
+      // Clean up old entries (only removes entries older than 1 day)
       const removed = pollerInstance.cleanupMissingFromSource(sourceName, currentItemIds, 1);
       if (removed > 0) {
         debug(`Cleaned up ${removed} stale state entries for source ${sourceName}`);
