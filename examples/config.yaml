@@ -105,6 +105,10 @@ sources:
 # - TTL-based: Entries older than ttl_days are removed on startup
 # - Source-aware: Entries for items no longer returned by a source are removed
 #   (only if older than 1 day, to avoid false positives from API issues)
+# - Status-aware: Items are automatically reprocessed when:
+#   - Reopened (closed/merged -> open)
+#   - Status changed (e.g., Linear: Done -> In Progress)
+#   - Updated after being processed (based on updated_at timestamp)
 #
 # Manual cleanup: opencode-pilot clear [--all | --source NAME | --item ID]
 # =============================================================================
