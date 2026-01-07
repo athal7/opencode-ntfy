@@ -314,6 +314,45 @@ sources: []
       
       assert.strictEqual(mappings, null);
     });
+
+    test('getToolProviderConfig returns full tool config with response_key', async () => {
+      writeFileSync(configPath, `
+tools:
+  apple-reminders:
+    response_key: reminders
+    mappings:
+      body: notes
+
+sources: []
+`);
+
+      const { loadRepoConfig, getToolProviderConfig } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      
+      const toolConfig = getToolProviderConfig('apple-reminders');
+      
+      assert.strictEqual(toolConfig.response_key, 'reminders');
+      assert.deepStrictEqual(toolConfig.mappings, { body: 'notes' });
+    });
+
+    test('getToolProviderConfig returns config without response_key', async () => {
+      writeFileSync(configPath, `
+tools:
+  github:
+    mappings:
+      url: html_url
+
+sources: []
+`);
+
+      const { loadRepoConfig, getToolProviderConfig } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      
+      const toolConfig = getToolProviderConfig('github');
+      
+      assert.strictEqual(toolConfig.response_key, undefined);
+      assert.deepStrictEqual(toolConfig.mappings, { url: 'html_url' });
+    });
   });
 
   describe('repo resolution for sources', () => {

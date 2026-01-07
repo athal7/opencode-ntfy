@@ -9,7 +9,7 @@
  * 5. Track processed items to avoid duplicates
  */
 
-import { loadRepoConfig, getRepoConfig, getAllSources, getToolMappings } from "./repo-config.js";
+import { loadRepoConfig, getRepoConfig, getAllSources, getToolProviderConfig } from "./repo-config.js";
 import { createPoller, pollGenericSource } from "./poller.js";
 import { evaluateReadiness, sortByPriority } from "./readiness.js";
 import { executeAction, buildCommand } from "./actions.js";
@@ -100,8 +100,8 @@ export async function pollOnce(options = {}) {
     // Fetch items from source
     if (!skipMcp) {
       try {
-        const mappings = getToolMappings(source.tool.mcp);
-        items = await pollGenericSource(source, { mappings });
+        const toolProviderConfig = getToolProviderConfig(source.tool.mcp);
+        items = await pollGenericSource(source, { toolProviderConfig });
         debug(`Fetched ${items.length} items from ${sourceName}`);
       } catch (err) {
         console.error(`[poll] Error fetching from ${sourceName}: ${err.message}`);

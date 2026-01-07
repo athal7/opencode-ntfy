@@ -135,6 +135,23 @@ export function getToolMappings(provider) {
 }
 
 /**
+ * Get full tool provider configuration (response_key, mappings, etc.)
+ * @param {string} provider - Tool provider name (e.g., "github", "linear", "apple-reminders")
+ * @returns {object|null} Tool config including response_key and mappings, or null if not configured
+ */
+export function getToolProviderConfig(provider) {
+  const config = getRawConfig();
+  const tools = config.tools || {};
+  const toolConfig = tools[provider];
+
+  if (!toolConfig) {
+    return null;
+  }
+
+  return toolConfig;
+}
+
+/**
  * Load a template from the templates directory
  * @param {string} templateName - Template name (without .md extension)
  * @param {string} [templatesDir] - Templates directory path (for testing)

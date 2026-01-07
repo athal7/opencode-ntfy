@@ -107,14 +107,28 @@ export function transformItems(items, idTemplate) {
 
 /**
  * Parse JSON text as an array with error handling
+ * @param {string} text - JSON text to parse
+ * @param {string} sourceName - Source name for error logging
+ * @param {string} [responseKey] - Key to extract array from response object
+ * @returns {Array} Parsed array of items
  */
-function parseJsonArray(text, sourceName) {
+export function parseJsonArray(text, sourceName, responseKey) {
   try {
     const data = JSON.parse(text);
+    
+    // If already an array, return it
     if (Array.isArray(data)) return data;
-    if (data.items) return data.items;
-    if (data.issues) return data.issues;
-    if (data.nodes) return data.nodes;
+    
+    // If response_key is configured, use it to extract the array
+    if (responseKey) {
+      const items = data[responseKey];
+      if (Array.isArray(items)) return items;
+      // response_key was specified but not found or not an array
+      console.error(`[poller] Response key '${responseKey}' not found or not an array in ${sourceName} response`);
+      return [];
+    }
+    
+    // No response_key - wrap single object as array
     return [data];
   } catch (err) {
     console.error(`[poller] Failed to parse ${sourceName} response:`, err.message);
@@ -206,13 +220,15 @@ function createTimeout(ms, operation) {
  * @param {object} [options] - Additional options
  * @param {number} [options.timeout] - Timeout in ms (default: 30000)
  * @param {string} [options.opencodeConfigPath] - Path to opencode.json for MCP config
- * @param {object} [options.mappings] - Field mappings to apply to items
+ * @param {object} [options.toolProviderConfig] - Tool provider config (response_key, mappings)
  * @returns {Promise<Array>} Array of items from the source with IDs and mappings applied
  */
 export async function pollGenericSource(source, options = {}) {
   const toolConfig = getToolConfig(source);
   const timeout = options.timeout || DEFAULT_MCP_TIMEOUT;
-  const mappings = options.mappings || null;
+  const toolProviderConfig = options.toolProviderConfig || {};
+  const responseKey = toolProviderConfig.response_key;
+  const mappings = toolProviderConfig.mappings || null;
   const mcpConfig = getMcpConfig(toolConfig.mcpServer, options.opencodeConfigPath);
   const client = new Client({ name: "opencode-pilot", version: "1.0.0" });
 
@@ -235,7 +251,7 @@ export async function pollGenericSource(source, options = {}) {
     const text = result.content?.[0]?.text;
     if (!text) return [];
     
-    const rawItems = parseJsonArray(text, source.name);
+    const rawItems = parseJsonArray(text, source.name, responseKey);
     
     // Apply field mappings before transforming
     const mappedItems = mappings 

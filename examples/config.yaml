@@ -10,15 +10,27 @@
 
 # =============================================================================
 # TOOLS - Field mappings for MCP servers (normalize different APIs)
+#
+# Each tool provider can specify:
+#   response_key: Key to extract array from response (e.g., "reminders", "nodes")
+#   mappings: Field name translations (e.g., { body: "description" })
 # =============================================================================
 tools:
   github:
+    response_key: items             # GitHub search returns { items: [...] }
     mappings: {}                    # GitHub already uses standard field names
 
   linear:
+    response_key: nodes             # Linear returns { nodes: [...] }
     mappings:
       body: title                         # Use title as body
       number: "url:/([A-Z0-9]+-[0-9]+)/"  # Extract PROJ-123 from URL
+
+  apple-reminders:
+    response_key: reminders         # Apple Reminders returns { reminders: [...] }
+    mappings:
+      title: name                   # Reminders uses 'name' not 'title'
+      body: notes                   # Reminders uses 'notes' for details
 
 # =============================================================================
 # SOURCES - What to poll (generic MCP tool references)
