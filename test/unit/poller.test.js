@@ -106,6 +106,195 @@ describe('poller.js', () => {
       assert.strictEqual(poller.getProcessedIds().length, 0);
       assert.strictEqual(poller.isProcessed('item-1'), false);
     });
+
+    test('clearProcessed removes a single item', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test' });
+      poller.markProcessed('item-2', { source: 'test' });
+      
+      poller.clearProcessed('item-1');
+      
+      assert.strictEqual(poller.isProcessed('item-1'), false);
+      assert.strictEqual(poller.isProcessed('item-2'), true);
+    });
+  });
+
+  describe('cleanup methods', () => {
+    test('getProcessedCount returns total count', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      poller.markProcessed('item-3', { source: 'source-b' });
+      
+      assert.strictEqual(poller.getProcessedCount(), 3);
+    });
+
+    test('getProcessedCount filters by source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      poller.markProcessed('item-3', { source: 'source-b' });
+      
+      assert.strictEqual(poller.getProcessedCount('source-a'), 2);
+      assert.strictEqual(poller.getProcessedCount('source-b'), 1);
+      assert.strictEqual(poller.getProcessedCount('source-c'), 0);
+    });
+
+    test('clearBySource removes all entries for a source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      poller.markProcessed('item-3', { source: 'source-b' });
+      
+      const removed = poller.clearBySource('source-a');
+      
+      assert.strictEqual(removed, 2);
+      assert.strictEqual(poller.isProcessed('item-1'), false);
+      assert.strictEqual(poller.isProcessed('item-2'), false);
+      assert.strictEqual(poller.isProcessed('item-3'), true);
+    });
+
+    test('clearBySource returns 0 for unknown source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      
+      const removed = poller.clearBySource('unknown');
+      
+      assert.strictEqual(removed, 0);
+      assert.strictEqual(poller.isProcessed('item-1'), true);
+    });
+
+    test('cleanupExpired removes entries older than ttlDays', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      const { readFileSync } = await import('fs');
+      
+      const poller = createPoller({ stateFile });
+      
+      // Mark items as processed
+      poller.markProcessed('recent-item', { source: 'test' });
+      poller.markProcessed('old-item', { source: 'test' });
+      
+      // Manually modify the state file to make one item old
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 40); // 40 days ago
+      state.processed['old-item'].processedAt = oldDate.toISOString();
+      writeFileSync(stateFile, JSON.stringify(state, null, 2));
+      
+      // Create new poller to reload state
+      const poller2 = createPoller({ stateFile });
+      const removed = poller2.cleanupExpired(30);
+      
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(poller2.isProcessed('recent-item'), true);
+      assert.strictEqual(poller2.isProcessed('old-item'), false);
+    });
+
+    test('cleanupExpired uses default ttlDays of 30', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      const { readFileSync } = await import('fs');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-25-days', { source: 'test' });
+      poller.markProcessed('item-35-days', { source: 'test' });
+      
+      // Modify state file
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const date25 = new Date();
+      date25.setDate(date25.getDate() - 25);
+      const date35 = new Date();
+      date35.setDate(date35.getDate() - 35);
+      state.processed['item-25-days'].processedAt = date25.toISOString();
+      state.processed['item-35-days'].processedAt = date35.toISOString();
+      writeFileSync(stateFile, JSON.stringify(state, null, 2));
+      
+      const poller2 = createPoller({ stateFile });
+      const removed = poller2.cleanupExpired(); // No argument = default 30
+      
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(poller2.isProcessed('item-25-days'), true);
+      assert.strictEqual(poller2.isProcessed('item-35-days'), false);
+    });
+
+    test('cleanupMissingFromSource removes stale entries for a source', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      const { readFileSync } = await import('fs');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test-source' });
+      poller.markProcessed('item-2', { source: 'test-source' });
+      poller.markProcessed('item-3', { source: 'other-source' });
+      
+      // Make items old enough to be cleaned (older than minAgeDays)
+      const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 2); // 2 days ago
+      for (const id of Object.keys(state.processed)) {
+        state.processed[id].processedAt = oldDate.toISOString();
+      }
+      writeFileSync(stateFile, JSON.stringify(state, null, 2));
+      
+      const poller2 = createPoller({ stateFile });
+      // Current items only has item-1 (item-2 is missing from source)
+      const removed = poller2.cleanupMissingFromSource('test-source', ['item-1'], 1);
+      
+      assert.strictEqual(removed, 1); // item-2 removed
+      assert.strictEqual(poller2.isProcessed('item-1'), true);
+      assert.strictEqual(poller2.isProcessed('item-2'), false);
+      assert.strictEqual(poller2.isProcessed('item-3'), true); // different source
+    });
+
+    test('cleanupMissingFromSource respects minAgeDays', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test-source' });
+      poller.markProcessed('item-2', { source: 'test-source' });
+      
+      // Items are fresh (just processed), so minAgeDays=1 should protect them
+      const removed = poller.cleanupMissingFromSource('test-source', ['item-1'], 1);
+      
+      assert.strictEqual(removed, 0); // item-2 NOT removed (too recent)
+      assert.strictEqual(poller.isProcessed('item-2'), true);
+    });
+
+    test('cleanupMissingFromSource with minAgeDays=0 removes immediately', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'test-source' });
+      poller.markProcessed('item-2', { source: 'test-source' });
+      
+      // minAgeDays=0 removes even fresh items
+      const removed = poller.cleanupMissingFromSource('test-source', ['item-1'], 0);
+      
+      assert.strictEqual(removed, 1);
+      assert.strictEqual(poller.isProcessed('item-2'), false);
+    });
+
+    test('cleanup state persists across instances', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('item-1', { source: 'source-a' });
+      poller.markProcessed('item-2', { source: 'source-a' });
+      
+      poller.clearBySource('source-a');
+      
+      // Verify persistence
+      const poller2 = createPoller({ stateFile });
+      assert.strictEqual(poller2.getProcessedCount(), 0);
+    });
   });
 
   describe('pollGenericSource', () => {

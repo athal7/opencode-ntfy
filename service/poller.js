@@ -351,5 +351,81 @@ export function createPoller(options = {}) {
     getProcessedIds() {
       return Array.from(processedItems.keys());
     },
+    
+    /**
+     * Get count of processed items, optionally filtered by source
+     * @param {string} [sourceName] - Optional source filter
+     * @returns {number} Count of entries
+     */
+    getProcessedCount(sourceName) {
+      if (!sourceName) return processedItems.size;
+      let count = 0;
+      for (const [, meta] of processedItems) {
+        if (meta.source === sourceName) count++;
+      }
+      return count;
+    },
+    
+    /**
+     * Clear all entries for a specific source
+     * @param {string} sourceName - Source name
+     * @returns {number} Number of entries removed
+     */
+    clearBySource(sourceName) {
+      let removed = 0;
+      for (const [id, meta] of processedItems) {
+        if (meta.source === sourceName) {
+          processedItems.delete(id);
+          removed++;
+        }
+      }
+      if (removed > 0) saveState();
+      return removed;
+    },
+    
+    /**
+     * Remove entries older than ttlDays
+     * @param {number} [ttlDays=30] - Days before expiration
+     * @returns {number} Number of entries removed
+     */
+    cleanupExpired(ttlDays = 30) {
+      const cutoffMs = Date.now() - (ttlDays * 24 * 60 * 60 * 1000);
+      let removed = 0;
+      for (const [id, meta] of processedItems) {
+        const processedAt = new Date(meta.processedAt).getTime();
+        if (processedAt < cutoffMs) {
+          processedItems.delete(id);
+          removed++;
+        }
+      }
+      if (removed > 0) saveState();
+      return removed;
+    },
+    
+    /**
+     * Remove entries for a source that are no longer in current items
+     * Only removes entries older than minAgeDays to avoid race conditions
+     * @param {string} sourceName - Source name to clean
+     * @param {string[]} currentItemIds - Current item IDs from source
+     * @param {number} [minAgeDays=1] - Minimum age before cleanup (0 = immediate)
+     * @returns {number} Number of entries removed
+     */
+    cleanupMissingFromSource(sourceName, currentItemIds, minAgeDays = 1) {
+      const currentSet = new Set(currentItemIds);
+      const minAgeMs = Date.now() - (minAgeDays * 24 * 60 * 60 * 1000);
+      let removed = 0;
+      for (const [id, meta] of processedItems) {
+        if (meta.source === sourceName && !currentSet.has(id)) {
+          const processedAt = new Date(meta.processedAt).getTime();
+          // Use <= to allow immediate cleanup when minAgeDays=0
+          if (processedAt <= minAgeMs) {
+            processedItems.delete(id);
+            removed++;
+          }
+        }
+      }
+      if (removed > 0) saveState();
+      return removed;
+    },
   };
 }
