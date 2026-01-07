@@ -777,4 +777,48 @@ sources: []
       assert.deepStrictEqual(defaults, {});
     });
   });
+
+  describe('cleanup config', () => {
+    test('getCleanupTtlDays returns configured value', async () => {
+      writeFileSync(configPath, `
+cleanup:
+  ttl_days: 14
+
+sources: []
+`);
+
+      const { loadRepoConfig, getCleanupTtlDays } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const ttlDays = getCleanupTtlDays();
+
+      assert.strictEqual(ttlDays, 14);
+    });
+
+    test('getCleanupTtlDays returns default 30 when not configured', async () => {
+      writeFileSync(configPath, `
+sources: []
+`);
+
+      const { loadRepoConfig, getCleanupTtlDays } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const ttlDays = getCleanupTtlDays();
+
+      assert.strictEqual(ttlDays, 30);
+    });
+
+    test('getCleanupTtlDays returns default 30 when cleanup section exists but ttl_days not set', async () => {
+      writeFileSync(configPath, `
+cleanup:
+  some_other_option: true
+
+sources: []
+`);
+
+      const { loadRepoConfig, getCleanupTtlDays } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const ttlDays = getCleanupTtlDays();
+
+      assert.strictEqual(ttlDays, 30);
+    });
+  });
 });
