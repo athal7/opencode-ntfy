@@ -5,12 +5,134 @@
  * Supports prompt_template for custom prompts (e.g., to invoke /devcontainer).
  */
 
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { readFileSync, existsSync } from "fs";
 import { debug } from "./logger.js";
 import { getNestedValue } from "./utils.js";
 import path from "path";
 import os from "os";
+
+/**
+ * Get running opencode server ports by parsing lsof output
+ * @returns {Promise<number[]>} Array of port numbers
+ */
+async function getOpencodePorts() {
+  try {
+    const output = execSync('lsof -i -P 2>/dev/null | grep -E "opencode.*LISTEN" || true', {
+      encoding: 'utf-8',
+      timeout: 30000
+    });
+    
+    const ports = [];
+    for (const line of output.split('\n')) {
+      // Parse lines like: opencode-  6897 athal   12u  IPv4 ... TCP *:60993 (LISTEN)
+      const match = line.match(/:(\d+)\s+\(LISTEN\)/);
+      if (match) {
+        ports.push(parseInt(match[1], 10));
+      }
+    }
+    return ports;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check if targetPath is within or equal to worktree path
+ * @param {string} targetPath - The path we're looking for
+ * @param {string} worktree - The server's worktree path
+ * @param {string[]} sandboxes - Array of sandbox paths
+ * @returns {number} Match score (higher = better match, 0 = no match)
+ */
+function getPathMatchScore(targetPath, worktree, sandboxes = []) {
+  // Normalize paths
+  const normalizedTarget = path.resolve(targetPath);
+  const normalizedWorktree = path.resolve(worktree);
+  
+  // Exact sandbox match (highest priority)
+  for (const sandbox of sandboxes) {
+    const normalizedSandbox = path.resolve(sandbox);
+    if (normalizedTarget === normalizedSandbox || normalizedTarget.startsWith(normalizedSandbox + path.sep)) {
+      return normalizedSandbox.length + 1000; // Bonus for sandbox match
+    }
+  }
+  
+  // Exact worktree match
+  if (normalizedTarget === normalizedWorktree) {
+    return normalizedWorktree.length + 500; // Bonus for exact match
+  }
+  
+  // Target is subdirectory of worktree
+  if (normalizedTarget.startsWith(normalizedWorktree + path.sep)) {
+    return normalizedWorktree.length;
+  }
+  
+  // Global project (worktree = "/") matches everything with lowest priority
+  if (normalizedWorktree === '/') {
+    return 1;
+  }
+  
+  return 0; // No match
+}
+
+/**
+ * Discover a running opencode server that matches the target directory
+ * 
+ * Queries all running opencode servers and finds the best match based on:
+ * 1. Exact sandbox match (highest priority)
+ * 2. Exact worktree match
+ * 3. Target is subdirectory of worktree
+ * 4. Global project (worktree="/") as fallback
+ * 
+ * @param {string} targetDir - The directory we want to work in
+ * @param {object} [options] - Options for testing/mocking
+ * @param {function} [options.getPorts] - Function to get server ports
+ * @param {function} [options.fetch] - Function to fetch URLs
+ * @returns {Promise<string|null>} Server URL (e.g., "http://localhost:4096") or null
+ */
+export async function discoverOpencodeServer(targetDir, options = {}) {
+  const getPorts = options.getPorts || getOpencodePorts;
+  const fetchFn = options.fetch || fetch;
+  
+  const ports = await getPorts();
+  if (ports.length === 0) {
+    debug('discoverOpencodeServer: no servers found');
+    return null;
+  }
+  
+  debug(`discoverOpencodeServer: checking ${ports.length} servers for ${targetDir}`);
+  
+  let bestMatch = null;
+  let bestScore = 0;
+  
+  for (const port of ports) {
+    const url = `http://localhost:${port}`;
+    try {
+      const response = await fetchFn(`${url}/project/current`);
+      if (!response.ok) {
+        debug(`discoverOpencodeServer: ${url} returned ${response.status}`);
+        continue;
+      }
+      
+      const project = await response.json();
+      const worktree = project.worktree || '/';
+      const sandboxes = project.sandboxes || [];
+      
+      const score = getPathMatchScore(targetDir, worktree, sandboxes);
+      debug(`discoverOpencodeServer: ${url} worktree=${worktree} score=${score}`);
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = url;
+      }
+    } catch (err) {
+      debug(`discoverOpencodeServer: ${url} error: ${err.message}`);
+    }
+  }
+  
+  debug(`discoverOpencodeServer: best match=${bestMatch} score=${bestScore}`);
+  return bestMatch;
+}
 
 // Default templates directory
 const DEFAULT_TEMPLATES_DIR = path.join(
@@ -109,9 +231,10 @@ export function getActionConfig(source, repoConfig, defaults) {
  * @param {object} item - Item to create session for
  * @param {object} config - Merged action config
  * @param {string} [templatesDir] - Templates directory path (for testing)
+ * @param {string} [serverUrl] - URL of running opencode server to attach to
  * @returns {object} { args: string[], cwd: string }
  */
-export function getCommandInfoNew(item, config, templatesDir) {
+export function getCommandInfoNew(item, config, templatesDir, serverUrl) {
   // Determine working directory: working_dir > path > repo_path > home
   const workingDir = config.working_dir || config.path || config.repo_path || "~";
   const cwd = expandPath(workingDir);
@@ -123,6 +246,11 @@ export function getCommandInfoNew(item, config, templatesDir) {
 
   // Build command args
   const args = ["opencode", "run"];
+  
+  // Add --attach if server URL is provided
+  if (serverUrl) {
+    args.push("--attach", serverUrl);
+  }
   
   // Add session title
   args.push("--title", sessionName);
@@ -264,11 +392,29 @@ function runSpawn(args, options = {}) {
  * @param {object} config - Repo config with action settings
  * @param {object} [options] - Execution options
  * @param {boolean} [options.dryRun] - If true, return command without executing
+ * @param {function} [options.discoverServer] - Custom server discovery function (for testing)
  * @returns {Promise<object>} Result with command, stdout, stderr, exitCode
  */
 export async function executeAction(item, config, options = {}) {
-  const cmdInfo = getCommandInfo(item, config);
-  const command = buildCommand(item, config); // For logging/display
+  // Get working directory first to determine which server to attach to
+  const workingDir = config.working_dir || config.path || config.repo_path || "~";
+  const cwd = expandPath(workingDir);
+  
+  // Discover running opencode server for this directory
+  const discoverFn = options.discoverServer || discoverOpencodeServer;
+  const serverUrl = await discoverFn(cwd);
+  
+  debug(`executeAction: discovered server=${serverUrl} for cwd=${cwd}`);
+  
+  // Build command info with server URL for --attach flag
+  const cmdInfo = getCommandInfoNew(item, config, undefined, serverUrl);
+  
+  // Build command string for display
+  const quoteArgs = (args) => args.map(a => 
+    a.includes(" ") || a.includes("\n") ? `"${a.replace(/"/g, '\\"')}"` : a
+  ).join(" ");
+  const cmdStr = quoteArgs(cmdInfo.args);
+  const command = cmdInfo.cwd ? `(cd ${cmdInfo.cwd} && ${cmdStr})` : cmdStr;
 
   debug(`executeAction: command=${command}`);
   debug(`executeAction: args=${JSON.stringify(cmdInfo.args)}, cwd=${cmdInfo.cwd}`);

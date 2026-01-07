@@ -231,5 +231,235 @@ describe('actions.js', () => {
       assert.ok(lastArg.includes('/devcontainer issue-66'), 'Prompt should include /devcontainer command');
       assert.ok(lastArg.includes('Fix bug'), 'Prompt should include title');
     });
+
+    test('includes --attach when serverUrl is provided', async () => {
+      const { getCommandInfoNew } = await import('../../service/actions.js');
+      
+      const item = { number: 123, title: 'Fix bug' };
+      const config = {
+        path: '~/code/backend',
+        prompt: 'default'
+      };
+      
+      const cmdInfo = getCommandInfoNew(item, config, templatesDir, 'http://localhost:4096');
+      
+      assert.ok(cmdInfo.args.includes('--attach'), 'Should include --attach flag');
+      assert.ok(cmdInfo.args.includes('http://localhost:4096'), 'Should include server URL');
+    });
+
+    test('does not include --attach when serverUrl is null', async () => {
+      const { getCommandInfoNew } = await import('../../service/actions.js');
+      
+      const item = { number: 123, title: 'Fix bug' };
+      const config = {
+        path: '~/code/backend',
+        prompt: 'default'
+      };
+      
+      const cmdInfo = getCommandInfoNew(item, config, templatesDir, null);
+      
+      assert.ok(!cmdInfo.args.includes('--attach'), 'Should not include --attach flag');
+    });
+  });
+
+  describe('discoverOpencodeServer', () => {
+    test('returns null when no servers running', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      // Mock with empty port list
+      const result = await discoverOpencodeServer('/some/path', { getPorts: async () => [] });
+      
+      assert.strictEqual(result, null);
+    });
+
+    test('returns matching server URL for exact worktree match', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000, 4000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          return { ok: true, json: async () => ({ worktree: '/Users/test/project-a', sandboxes: [] }) };
+        }
+        if (url === 'http://localhost:4000/project/current') {
+          return { ok: true, json: async () => ({ worktree: '/Users/test/project-b', sandboxes: [] }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/project-b', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:4000');
+    });
+
+    test('returns matching server URL for subdirectory of worktree', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          return { ok: true, json: async () => ({ worktree: '/Users/test/project', sandboxes: [] }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/project/src/components', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:3000');
+    });
+
+    test('returns matching server URL when cwd is in sandboxes', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          return { ok: true, json: async () => ({ 
+            worktree: '/Users/test/project', 
+            sandboxes: ['/Users/test/.opencode/worktree/abc/sandbox-1'] 
+          }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/.opencode/worktree/abc/sandbox-1', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:3000');
+    });
+
+    test('prefers more specific worktree match over less specific', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000, 4000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          // Global project
+          return { ok: true, json: async () => ({ worktree: '/', sandboxes: [] }) };
+        }
+        if (url === 'http://localhost:4000/project/current') {
+          // Specific project
+          return { ok: true, json: async () => ({ worktree: '/Users/test/project', sandboxes: [] }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/project/src', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      // Should prefer the more specific match (port 4000)
+      assert.strictEqual(result, 'http://localhost:4000');
+    });
+
+    test('falls back to global project when no specific match', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          return { ok: true, json: async () => ({ worktree: '/', sandboxes: [] }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/random/path', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:3000');
+    });
+
+    test('returns null when fetch fails for all servers', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000, 4000];
+      const mockFetch = async () => {
+        throw new Error('Connection refused');
+      };
+      
+      const result = await discoverOpencodeServer('/some/path', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, null);
+    });
+
+    test('skips servers that return non-ok response', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000, 4000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          return { ok: false };
+        }
+        if (url === 'http://localhost:4000/project/current') {
+          return { ok: true, json: async () => ({ worktree: '/Users/test/project', sandboxes: [] }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/project', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:4000');
+    });
+  });
+
+  describe('executeAction', () => {
+    test('discovers server and includes --attach in dry run', async () => {
+      const { executeAction } = await import('../../service/actions.js');
+      
+      const item = { number: 123, title: 'Fix bug' };
+      const config = {
+        path: tempDir,
+        prompt: 'default'
+      };
+      
+      // Mock server discovery
+      const mockDiscoverServer = async () => 'http://localhost:4096';
+      
+      const result = await executeAction(item, config, { 
+        dryRun: true,
+        discoverServer: mockDiscoverServer
+      });
+      
+      assert.ok(result.dryRun);
+      assert.ok(result.command.includes('--attach'), 'Command should include --attach flag');
+      assert.ok(result.command.includes('http://localhost:4096'), 'Command should include server URL');
+    });
+
+    test('does not include --attach when no server discovered', async () => {
+      const { executeAction } = await import('../../service/actions.js');
+      
+      const item = { number: 123, title: 'Fix bug' };
+      const config = {
+        path: tempDir,
+        prompt: 'default'
+      };
+      
+      // Mock no server found
+      const mockDiscoverServer = async () => null;
+      
+      const result = await executeAction(item, config, { 
+        dryRun: true,
+        discoverServer: mockDiscoverServer
+      });
+      
+      assert.ok(result.dryRun);
+      assert.ok(!result.command.includes('--attach'), 'Command should not include --attach flag');
+    });
   });
 });
