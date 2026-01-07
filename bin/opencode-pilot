@@ -310,8 +310,8 @@ async function configCommand() {
       // Show prompt and agent
       const prompt = source.prompt || defaults.prompt || "default";
       const agent = source.agent || defaults.agent;
-      const promptAgent = agent ? `${prompt} (agent: ${agent})` : prompt;
-      console.log(`      prompt: ${promptAgent}`);
+      console.log(`      prompt: ${prompt}`);
+      if (agent) console.log(`      agent: ${agent}`);
       
       // Show repo resolution - interpolate template with configured repos
       if (source.repos) {
