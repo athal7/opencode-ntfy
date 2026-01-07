@@ -113,11 +113,12 @@ export async function pollOnce(options = {}) {
     }
 
     let items = [];
+    let toolProviderConfig = null;
 
     // Fetch items from source
     if (!skipMcp) {
       try {
-        const toolProviderConfig = getToolProviderConfig(source.tool.mcp);
+        toolProviderConfig = getToolProviderConfig(source.tool.mcp);
         items = await pollGenericSource(source, { toolProviderConfig });
         debug(`Fetched ${items.length} items from ${sourceName}`);
       } catch (err) {
@@ -153,12 +154,15 @@ export async function pollOnce(options = {}) {
     const sortedItems = sortByPriority(readyItems, sortConfig);
 
     // Process ready items
+    // Get reprocess_on config from provider (e.g., ['state', 'updated_at'] for GitHub)
+    const reprocessOn = toolProviderConfig?.reprocess_on || source.reprocess_on;
+    
     debug(`Processing ${sortedItems.length} sorted items`);
     for (const item of sortedItems) {
       // Check if already processed
       if (pollerInstance && pollerInstance.isProcessed(item.id)) {
         // Check if item should be reprocessed (reopened, status changed, etc.)
-        if (pollerInstance.shouldReprocess(item)) {
+        if (pollerInstance.shouldReprocess(item, { reprocessOn })) {
           debug(`Reprocessing ${item.id} - state changed`);
           pollerInstance.clearProcessed(item.id);
           console.log(`[poll] Reprocessing ${item.id} (reopened or updated)`);

@@ -396,6 +396,64 @@ describe('poller.js', () => {
       };
       assert.strictEqual(poller.shouldReprocess(item), false);
     });
+
+    test('shouldReprocess respects reprocessOn config', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { 
+        source: 'test', 
+        itemState: 'closed',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      const item = { 
+        id: 'issue-1', 
+        state: 'open',  // Reopened
+        updated_at: '2026-01-05T00:00:00Z'  // Also updated
+      };
+      
+      // Only check updated_at, not state
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updated_at'] }), 
+        true
+      );
+      
+      // Only check state
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['state'] }), 
+        true
+      );
+      
+      // Check neither (empty array)
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: [] }), 
+        false
+      );
+    });
+
+    test('shouldReprocess handles Linear updatedAt field', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('linear-1', { 
+        source: 'test', 
+        itemState: 'In Progress',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      // Linear uses camelCase updatedAt
+      const item = { 
+        id: 'linear-1', 
+        status: 'In Progress',
+        updatedAt: '2026-01-05T00:00:00Z'
+      };
+      
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updatedAt'] }), 
+        true
+      );
+    });
   });
 
   describe('pollGenericSource', () => {

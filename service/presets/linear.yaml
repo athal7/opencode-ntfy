@@ -6,6 +6,10 @@ _provider:
   mappings:
     body: title
     number: "url:/([A-Z0-9]+-[0-9]+)/"
+  # Reprocess items when these fields change (status changes, updates)
+  reprocess_on:
+    - status       # Detect status changes (Done -> In Progress)
+    - updatedAt    # Linear uses camelCase for updated timestamp
 
 # Presets
 my-issues:

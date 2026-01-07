@@ -431,40 +431,53 @@ export function createPoller(options = {}) {
     
     /**
      * Check if an item should be reprocessed based on state changes
-     * Returns true if:
-     * - Item was reopened (closed/merged -> open)
-     * - Item status changed (for Linear: Done -> In Progress)
-     * - Item was updated after being processed
+     * Uses reprocess_on config to determine which fields to check.
+     * 
      * @param {object} item - Current item from source
+     * @param {object} [options] - Options
+     * @param {string[]} [options.reprocessOn] - Fields to check for changes (e.g., ['state', 'updated_at'])
      * @returns {boolean} True if item should be reprocessed
      */
-    shouldReprocess(item) {
+    shouldReprocess(item, options = {}) {
       if (!item.id) return false;
       
       const meta = processedItems.get(item.id);
       if (!meta) return false; // Not processed before
-      if (!meta.itemState) return false; // No state tracking (legacy entry)
       
-      // Get current state from item (GitHub uses 'state', Linear uses 'status')
-      const currentState = item.state || item.status;
-      if (!currentState) return false;
+      // Get reprocess_on fields from options, default to common fields for backwards compatibility
+      const reprocessOn = options.reprocessOn || ['state', 'status', 'updated_at'];
       
-      // Check if state changed from closed/done to open/in-progress
-      const storedState = meta.itemState.toLowerCase();
-      const newState = currentState.toLowerCase();
-      
-      // Reopened: was closed/merged, now open
-      if ((storedState === 'closed' || storedState === 'merged' || storedState === 'done') 
-          && (newState === 'open' || newState === 'in progress')) {
-        return true;
-      }
-      
-      // Check updated_at timestamp if available
-      if (meta.itemUpdatedAt && item.updated_at) {
-        const storedUpdatedAt = new Date(meta.itemUpdatedAt).getTime();
-        const currentUpdatedAt = new Date(item.updated_at).getTime();
-        if (currentUpdatedAt > storedUpdatedAt) {
-          return true;
+      // Check each configured field for changes
+      for (const field of reprocessOn) {
+        // Handle state/status fields (detect reopening)
+        if (field === 'state' || field === 'status') {
+          const storedState = meta.itemState;
+          const currentState = item[field];
+          
+          if (storedState && currentState) {
+            const stored = storedState.toLowerCase();
+            const current = currentState.toLowerCase();
+            
+            // Reopened: was closed/merged/done, now open/in-progress
+            if ((stored === 'closed' || stored === 'merged' || stored === 'done') 
+                && (current === 'open' || current === 'in progress')) {
+              return true;
+            }
+          }
+        }
+        
+        // Handle timestamp fields (detect updates)
+        if (field === 'updated_at' || field === 'updatedAt') {
+          const storedTimestamp = meta.itemUpdatedAt;
+          const currentTimestamp = item[field] || item.updated_at || item.updatedAt;
+          
+          if (storedTimestamp && currentTimestamp) {
+            const storedTime = new Date(storedTimestamp).getTime();
+            const currentTime = new Date(currentTimestamp).getTime();
+            if (currentTime > storedTime) {
+              return true;
+            }
+          }
         }
       }
       

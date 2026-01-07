@@ -105,10 +105,15 @@ sources:
 # - TTL-based: Entries older than ttl_days are removed on startup
 # - Source-aware: Entries for items no longer returned by a source are removed
 #   (only if older than 1 day, to avoid false positives from API issues)
-# - Status-aware: Items are automatically reprocessed when:
-#   - Reopened (closed/merged -> open)
-#   - Status changed (e.g., Linear: Done -> In Progress)
-#   - Updated after being processed (based on updated_at timestamp)
+# - Status-aware: Items are automatically reprocessed based on reprocess_on config
+#
+# Built-in presets include sensible reprocess_on defaults:
+# - GitHub: reprocess_on: [state, updated_at]  # Reopened issues, any updates
+# - Linear: reprocess_on: [status, updatedAt]  # Status changes, any updates
+#
+# You can override reprocess_on per source:
+#   - preset: github/my-issues
+#     reprocess_on: [state]  # Only reprocess reopened issues, ignore updates
 #
 # Manual cleanup: opencode-pilot clear [--all | --source NAME | --item ID]
 # =============================================================================
