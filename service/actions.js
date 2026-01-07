@@ -15,7 +15,7 @@ import os from "os";
 // Default templates directory
 const DEFAULT_TEMPLATES_DIR = path.join(
   os.homedir(),
-  ".config/opencode-pilot/templates"
+  ".config/opencode/pilot/templates"
 );
 
 /**

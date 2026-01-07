@@ -20,13 +20,13 @@ import { expandPreset, expandGitHubShorthand, getProviderConfig } from "./preset
 // Default config path
 const DEFAULT_CONFIG_PATH = path.join(
   os.homedir(),
-  ".config/opencode-pilot/config.yaml"
+  ".config/opencode/pilot/config.yaml"
 );
 
 // Default templates directory
 const DEFAULT_TEMPLATES_DIR = path.join(
   os.homedir(),
-  ".config/opencode-pilot/templates"
+  ".config/opencode/pilot/templates"
 );
 
 // In-memory config cache (for testing and runtime)

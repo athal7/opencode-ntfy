@@ -19,9 +19,9 @@ npm install -g opencode-pilot
 
 ## Quick Start
 
-1. **Create config** - Copy [examples/config.yaml](examples/config.yaml) to `~/.config/opencode-pilot/config.yaml` and customize
+1. **Create config** - Copy [examples/config.yaml](examples/config.yaml) to `~/.config/opencode/pilot/config.yaml` and customize
 
-2. **Create templates** - Add prompt templates to `~/.config/opencode-pilot/templates/`
+2. **Create templates** - Add prompt templates to `~/.config/opencode/pilot/templates/`
 
 3. **Enable the plugin** - Add to your `opencode.json`:
 
@@ -67,7 +67,7 @@ Three ways to configure sources, from simplest to most flexible:
 
 ### Prompt Templates
 
-Create prompt templates as markdown files in `~/.config/opencode-pilot/templates/`. Templates support placeholders like `{title}`, `{body}`, `{number}`, `{html_url}`, etc.
+Create prompt templates as markdown files in `~/.config/opencode/pilot/templates/`. Templates support placeholders like `{title}`, `{body}`, `{number}`, `{html_url}`, etc.
 
 ## CLI Commands
 

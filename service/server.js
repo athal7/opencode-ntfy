@@ -13,7 +13,7 @@ import YAML from 'yaml'
 
 // Default configuration
 const DEFAULT_HTTP_PORT = 4097
-const DEFAULT_REPOS_CONFIG = join(homedir(), '.config', 'opencode-pilot', 'config.yaml')
+const DEFAULT_REPOS_CONFIG = join(homedir(), '.config', 'opencode', 'pilot', 'config.yaml')
 const DEFAULT_POLL_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
 /**

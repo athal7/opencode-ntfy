@@ -282,7 +282,7 @@ export async function pollGenericSource(source, options = {}) {
  * @returns {object} Poller instance
  */
 export function createPoller(options = {}) {
-  const stateFile = options.stateFile || path.join(os.homedir(), '.config/opencode-pilot/poll-state.json');
+  const stateFile = options.stateFile || path.join(os.homedir(), '.config/opencode/pilot/poll-state.json');
   const configPath = options.configPath;
   
   // Load existing state
