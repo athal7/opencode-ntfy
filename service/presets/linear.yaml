@@ -1,0 +1,11 @@
+# Linear source presets
+
+my-issues:
+  name: my-issues
+  tool:
+    mcp: linear
+    name: list_issues
+  args: {}
+    # teamId and assigneeId are required - user must provide
+  item:
+    id: "linear:{id}"

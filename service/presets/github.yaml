@@ -1,0 +1,31 @@
+# GitHub source presets
+
+my-issues:
+  name: my-issues
+  tool:
+    mcp: github
+    name: search_issues
+  args:
+    q: "is:issue assignee:@me state:open"
+  item:
+    id: "{html_url}"
+
+review-requests:
+  name: review-requests
+  tool:
+    mcp: github
+    name: search_issues
+  args:
+    q: "is:pr review-requested:@me state:open"
+  item:
+    id: "{html_url}"
+
+my-prs-feedback:
+  name: my-prs-feedback
+  tool:
+    mcp: github
+    name: search_issues
+  args:
+    q: "is:pr author:@me state:open review:changes_requested"
+  item:
+    id: "{html_url}"

@@ -3,71 +3,57 @@
  *
  * Presets reduce config verbosity by providing sensible defaults
  * for common polling sources like GitHub issues and Linear tickets.
+ * 
+ * Presets are loaded from YAML files in this directory.
  */
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import YAML from "yaml";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Built-in presets registry
- * Key format: "provider/preset-name"
+ * Load presets from a YAML file
+ * @param {string} provider - Provider name (e.g., "github", "linear")
+ * @returns {object} Presets object keyed by preset name
  */
-export const PRESETS = {
-  // GitHub presets
-  "github/my-issues": {
-    name: "my-issues",
-    tool: {
-      mcp: "github",
-      name: "search_issues",
-    },
-    args: {
-      q: "is:issue assignee:@me state:open",
-    },
-    item: {
-      id: "{html_url}",
-    },
-  },
+function loadPresetsFromFile(provider) {
+  const filePath = path.join(__dirname, `${provider}.yaml`);
+  if (!fs.existsSync(filePath)) {
+    return {};
+  }
+  
+  try {
+    const content = fs.readFileSync(filePath, "utf-8");
+    return YAML.parse(content) || {};
+  } catch (err) {
+    console.error(`Warning: Failed to load presets from ${filePath}: ${err.message}`);
+    return {};
+  }
+}
 
-  "github/review-requests": {
-    name: "review-requests",
-    tool: {
-      mcp: "github",
-      name: "search_issues",
-    },
-    args: {
-      q: "is:pr review-requested:@me state:open",
-    },
-    item: {
-      id: "{html_url}",
-    },
-  },
+/**
+ * Build the full presets registry from YAML files
+ * Format: "provider/preset-name" -> preset config
+ */
+function buildPresetsRegistry() {
+  const registry = {};
+  const providers = ["github", "linear"];
+  
+  for (const provider of providers) {
+    const presets = loadPresetsFromFile(provider);
+    for (const [name, config] of Object.entries(presets)) {
+      registry[`${provider}/${name}`] = config;
+    }
+  }
+  
+  return registry;
+}
 
-  "github/my-prs-feedback": {
-    name: "my-prs-feedback",
-    tool: {
-      mcp: "github",
-      name: "search_issues",
-    },
-    args: {
-      q: "is:pr author:@me state:open review:changes_requested",
-    },
-    item: {
-      id: "{html_url}",
-    },
-  },
-
-  // Linear presets
-  "linear/my-issues": {
-    name: "my-issues",
-    tool: {
-      mcp: "linear",
-      name: "list_issues",
-    },
-    args: {
-      // teamId and assigneeId are required - user must provide
-    },
-    item: {
-      id: "linear:{id}",
-    },
-  },
-};
+// Load presets once at module initialization
+const PRESETS = buildPresetsRegistry();
 
 /**
  * Get a preset by name
