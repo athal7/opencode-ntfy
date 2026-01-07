@@ -361,30 +361,29 @@ async function configCommand() {
 // ============================================================================
 
 async function testSourceCommand(sourceName) {
+  // Load sources using getSources() to expand presets
+  const { loadRepoConfig, getSources } = await import(join(serviceDir, "repo-config.js"));
+  loadRepoConfig(PILOT_CONFIG_FILE);
+  
+  let sources;
+  try {
+    sources = getSources();
+  } catch (err) {
+    console.error(`Failed to load sources: ${err.message}`);
+    process.exit(1);
+  }
+
   if (!sourceName) {
     console.error("Usage: opencode-pilot test-source <source-name>");
     console.error("");
     console.error("Available sources:");
     
-    // Load and show available sources
-    if (existsSync(PILOT_CONFIG_FILE)) {
-      try {
-        const { default: YAML } = await import("yaml");
-        const content = readFileSync(PILOT_CONFIG_FILE, "utf8");
-        const config = YAML.parse(content);
-        const sources = config.sources || [];
-        if (sources.length === 0) {
-          console.error("  (no sources configured)");
-        } else {
-          for (const s of sources) {
-            console.error(`  ${s.name}`);
-          }
-        }
-      } catch (err) {
-        console.error(`  Error loading config: ${err.message}`);
-      }
+    if (sources.length === 0) {
+      console.error("  (no sources configured)");
     } else {
-      console.error("  (config file not found)");
+      for (const s of sources) {
+        console.error(`  ${s.name}`);
+      }
     }
     process.exit(1);
   }
@@ -393,18 +392,7 @@ async function testSourceCommand(sourceName) {
   console.log("=".repeat(40));
   console.log("");
 
-  // Load config
-  if (!existsSync(PILOT_CONFIG_FILE)) {
-    console.error(`Config file not found: ${PILOT_CONFIG_FILE}`);
-    process.exit(1);
-  }
-
-  const { default: YAML } = await import("yaml");
-  const content = readFileSync(PILOT_CONFIG_FILE, "utf8");
-  const config = YAML.parse(content);
-
   // Find source
-  const sources = config.sources || [];
   const source = sources.find(s => s.name === sourceName);
   
   if (!source) {
@@ -429,19 +417,24 @@ async function testSourceCommand(sourceName) {
   if (source.prompt) console.log(`  prompt: ${source.prompt}`);
   if (source.agent) console.log(`  agent: ${source.agent}`);
 
-  // Show mappings
-  const tools = config.tools || {};
+  // Show mappings (using getToolProviderConfig which includes preset defaults)
+  const { getToolProviderConfig } = await import(join(serviceDir, "repo-config.js"));
   const provider = source.tool?.mcp;
-  const mappings = tools[provider]?.mappings;
+  const toolProviderConfig = getToolProviderConfig(provider);
+  const mappings = toolProviderConfig?.mappings;
   
   console.log("");
   console.log("Field Mappings:");
-  if (mappings) {
+  if (mappings && Object.keys(mappings).length > 0) {
     for (const [target, sourcePath] of Object.entries(mappings)) {
       console.log(`  ${target} ← ${sourcePath}`);
     }
   } else {
-    console.log(`  (no mappings configured for provider '${provider}')`);
+    console.log(`  (no mappings for provider '${provider}')`);
+  }
+  
+  if (toolProviderConfig?.response_key) {
+    console.log(`  response_key: ${toolProviderConfig.response_key}`);
   }
 
   // Fetch items
@@ -453,8 +446,8 @@ async function testSourceCommand(sourceName) {
     const pollerPath = join(serviceDir, "poller.js");
     const { pollGenericSource, applyMappings } = await import(pollerPath);
     
-    // Fetch items with mappings applied
-    const items = await pollGenericSource(source, { mappings });
+    // Fetch items with tool provider config (includes mappings and response_key)
+    const items = await pollGenericSource(source, { toolProviderConfig });
     
     console.log(`Found ${items.length} item(s)`);
     console.log("");
