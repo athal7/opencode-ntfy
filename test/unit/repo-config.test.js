@@ -423,7 +423,7 @@ sources:
       assert.deepStrictEqual(repos, ['myorg/backend']);
     });
 
-    test('resolves multiple repos from repos array', async () => {
+    test('repos array without repo template returns empty (needs item context)', async () => {
       writeFileSync(configPath, `
 sources:
   - name: cross-repo
@@ -444,7 +444,8 @@ sources:
       const item = { number: 123 };
       const repos = resolveRepoForItem(source, item);
 
-      assert.deepStrictEqual(repos, ['myorg/backend', 'myorg/frontend']);
+      // Without a repo template, can't resolve from item - returns empty
+      assert.deepStrictEqual(repos, []);
     });
 
     test('returns empty array when no repo config', async () => {
@@ -613,6 +614,50 @@ sources:
       loadRepoConfig(configPath);
       
       assert.throws(() => getSources(), /Unknown preset: unknown\/preset/);
+    });
+
+    test('github presets include repo field for automatic resolution', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/my-issues
+  - preset: github/review-requests
+  - preset: github/my-prs-feedback
+`);
+
+      const { loadRepoConfig, getSources, resolveRepoForItem } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      // All GitHub presets should have repo field for automatic resolution
+      const mockItem = { repository: { full_name: 'myorg/backend' } };
+      
+      for (const source of sources) {
+        assert.strictEqual(source.repo, '{repository.full_name}', `Preset ${source.name} should have repo field`);
+        const repos = resolveRepoForItem(source, mockItem);
+        assert.deepStrictEqual(repos, ['myorg/backend'], `Preset ${source.name} should resolve repo from item`);
+      }
+    });
+
+    test('source.repos acts as allowlist filter', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/my-issues
+    repos:
+      - myorg/backend
+      - myorg/frontend
+`);
+
+      const { loadRepoConfig, getSources, resolveRepoForItem } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const source = getSources()[0];
+
+      // Item from allowed repo should resolve
+      const allowedItem = { repository: { full_name: 'myorg/backend' } };
+      assert.deepStrictEqual(resolveRepoForItem(source, allowedItem), ['myorg/backend']);
+
+      // Item from non-allowed repo should return empty (filtered out)
+      const filteredItem = { repository: { full_name: 'other/repo' } };
+      assert.deepStrictEqual(resolveRepoForItem(source, filteredItem), []);
     });
   });
 

@@ -9,7 +9,7 @@
  * 5. Track processed items to avoid duplicates
  */
 
-import { loadRepoConfig, getRepoConfig, getAllSources, getToolProviderConfig } from "./repo-config.js";
+import { loadRepoConfig, getRepoConfig, getAllSources, getToolProviderConfig, resolveRepoForItem } from "./repo-config.js";
 import { createPoller, pollGenericSource } from "./poller.js";
 import { evaluateReadiness, sortByPriority } from "./readiness.js";
 import { executeAction, buildCommand } from "./actions.js";
@@ -52,6 +52,25 @@ export function buildActionConfigFromSource(source, repoConfig) {
   };
 }
 
+/**
+ * Build action config for a specific item, resolving repo from item fields
+ * Uses source.repo template (e.g., "{repository.full_name}") to look up repo config
+ * @param {object} source - Source configuration
+ * @param {object} item - Item from the source (contains repo info)
+ * @returns {object} Merged action config
+ */
+export function buildActionConfigForItem(source, item) {
+  // Resolve repo key from item using source.repo template
+  const repoKeys = resolveRepoForItem(source, item);
+  const repoKey = repoKeys.length > 0 ? repoKeys[0] : null;
+  
+  // Get repo config (returns empty object if repo not configured)
+  const repoConfig = repoKey ? getRepoConfig(repoKey) : {};
+  
+  // Build config with repo config as base, source overrides on top
+  return buildActionConfigFromSource(source, repoConfig);
+}
+
 // Global state
 let pollingInterval = null;
 let pollerInstance = null;
@@ -87,8 +106,6 @@ export async function pollOnce(options = {}) {
   // Process each source
   for (const source of sources) {
     const sourceName = source.name || 'unknown';
-    const repoKey = source.name || 'default';
-    const repoConfig = getRepoConfig(repoKey) || {};
 
     if (!hasToolConfig(source)) {
       console.error(`[poll] Source '${sourceName}' missing tool configuration (requires tool.mcp and tool.name)`);
@@ -112,21 +129,28 @@ export async function pollOnce(options = {}) {
     // Evaluate readiness and filter
     const readyItems = items
       .map((item) => {
+        // Resolve repo from item for per-item config
+        const repoKeys = resolveRepoForItem(source, item);
+        const repoKey = repoKeys.length > 0 ? repoKeys[0] : null;
+        const repoConfig = repoKey ? getRepoConfig(repoKey) : {};
+        
         const readiness = evaluateReadiness(item, repoConfig);
         debug(`Item ${item.id}: ready=${readiness.ready}, reason=${readiness.reason || 'none'}`);
         return {
           ...item,
-          repo_key: repoKey,
-          repo_short: repoKey.split("/").pop(),
+          repo_key: repoKey || sourceName,
+          repo_short: repoKey ? repoKey.split("/").pop() : sourceName,
           _readiness: readiness,
+          _repoConfig: repoConfig,
         };
       })
       .filter((item) => item._readiness.ready);
     
     debug(`${readyItems.length} items ready out of ${items.length}`);
 
-    // Sort by priority
-    const sortedItems = sortByPriority(readyItems, repoConfig);
+    // Sort by priority (use first item's repo config or empty)
+    const sortConfig = readyItems.length > 0 ? readyItems[0]._repoConfig : {};
+    const sortedItems = sortByPriority(readyItems, sortConfig);
 
     // Process ready items
     debug(`Processing ${sortedItems.length} sorted items`);
@@ -138,8 +162,8 @@ export async function pollOnce(options = {}) {
       }
 
       debug(`Executing action for ${item.id}`);
-      // Build action config from source (includes agent, model, prompt, working_dir)
-      const actionConfig = buildActionConfigFromSource(source, repoConfig);
+      // Build action config from source and item (resolves repo from item fields)
+      const actionConfig = buildActionConfigForItem(source, item);
 
       // Execute or dry-run
       if (dryRun) {

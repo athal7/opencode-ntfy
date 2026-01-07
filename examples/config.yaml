@@ -29,9 +29,12 @@ sources:
   - preset: github/review-requests
     prompt: review
 
-  # My PRs that have change requests
+  # My PRs that have change requests (filter to specific repos)
   - preset: github/my-prs-feedback
     prompt: review-feedback
+    repos:                           # Optional: filter to specific repos
+      - myorg/backend
+      - myorg/frontend
 
   # Linear issues (requires teamId and assigneeId)
   # Find IDs via: opencode-pilot discover linear
@@ -83,24 +86,16 @@ sources:
 #       body: notes
 
 # =============================================================================
-# REPOS - Per-repository settings (OPTIONAL)
+# REPOS - Map GitHub repos to local paths (OPTIONAL)
 #
-# Use this section when you need to:
-#   - Map GitHub repo names to local paths
-#   - Share config across multiple sources using YAML anchors
-#   - Set repo-specific prompts, branches, or session naming
-#
-# Note: For simple cases, use working_dir directly on sources instead.
+# GitHub presets automatically resolve the repo from each item's
+# repository.full_name field. Add entries here to map repos to local paths.
 # =============================================================================
 # repos:
-#   myorg/backend: &backend-repo
+#   myorg/backend:
 #     path: ~/code/backend
-#     prompt: worktree
-#     session:
-#       name: "issue-{number}"
 #
 #   myorg/frontend:
-#     <<: *backend-repo              # Inherit settings via YAML anchor
 #     path: ~/code/frontend
 
 # =============================================================================

@@ -234,18 +234,29 @@ export function getTemplate(templateName, templatesDir) {
  * @returns {Array<string>} Array of repo keys
  */
 export function resolveRepoForItem(source, item) {
-  // Multi-repo: explicit repos array
-  if (Array.isArray(source.repos)) {
-    return source.repos;
-  }
-
-  // Single repo from field reference (e.g., "{repository.full_name}")
+  // Resolve repo from item using template (e.g., "{repository.full_name}")
+  let resolvedRepo = null;
   if (typeof source.repo === "string") {
     const resolved = expandTemplate(source.repo, item);
-    // Only return if actually resolved (not still a template)
+    // Only use if actually resolved (not still a template)
     if (resolved && !resolved.includes("{")) {
-      return [resolved];
+      resolvedRepo = resolved;
     }
+  }
+
+  // If source.repos is an array, use it as an allowlist filter
+  if (Array.isArray(source.repos)) {
+    // If we resolved a repo from the item, check if it's in the allowlist
+    if (resolvedRepo) {
+      return source.repos.includes(resolvedRepo) ? [resolvedRepo] : [];
+    }
+    // No repo template - return empty (can't match without item context)
+    return [];
+  }
+
+  // No allowlist - return the resolved repo if we have one
+  if (resolvedRepo) {
+    return [resolvedRepo];
   }
 
   // No repo configuration - repo-agnostic source
