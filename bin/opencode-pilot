@@ -314,14 +314,23 @@ async function configCommand() {
       if (agent) console.log(`      agent: ${agent}`);
       
       // Show repo resolution - interpolate template with configured repos
+      const configuredRepos = Object.keys(config.repos || {});
       if (source.repos) {
-        // Explicit repos filter
-        console.log(`      repos: ${source.repos.join(", ")}`);
+        // Explicit repos filter - check if it's all configured repos
+        const isAll = configuredRepos.length > 0 && 
+          source.repos.length === configuredRepos.length &&
+          source.repos.every(r => configuredRepos.includes(r));
+        if (isAll) {
+          console.log(`      repos: all`);
+        } else {
+          for (const repo of source.repos) {
+            console.log(`      repo: ${repo}`);
+          }
+        }
       } else if (source.repo && source.repo.includes("{")) {
-        // Template like {repository_full_name} - show which configured repos could match
-        const configuredRepos = Object.keys(config.repos || {});
+        // Template like {repository_full_name} - matches all configured repos
         if (configuredRepos.length > 0) {
-          console.log(`      repos: ${configuredRepos.join(", ")} (from config)`);
+          console.log(`      repos: all`);
         } else {
           console.log(`      repos: (none configured)`);
         }
@@ -331,7 +340,7 @@ async function configCommand() {
       } else if (source.working_dir) {
         console.log(`      working_dir: ${source.working_dir}`);
       } else {
-        console.log(`      working_dir: ~ (default)`);
+        console.log(`      working_dir: default`);
       }
     }
   }
