@@ -15,7 +15,9 @@ sources:
 
   - preset: github/my-prs-feedback
     prompt: review-feedback
-    repos: [myorg/backend, myorg/frontend]  # Optional: filter repos
+    repos:
+      - myorg/backend
+      - myorg/frontend
 
   # Linear (requires teamId and assigneeId)
   - preset: linear/my-issues
@@ -32,23 +34,31 @@ sources:
 
   # Full syntax for custom MCP sources (e.g., Apple Reminders)
   # - name: agent-tasks
-  #   tool: { mcp: apple-reminders, name: list_reminders }
-  #   args: { list_name: "Agent Tasks", completed: false }
-  #   item: { id: "reminder:{id}" }
+  #   tool:
+  #     mcp: apple-reminders
+  #     name: list_reminders
+  #   args:
+  #     list_name: "Agent Tasks"
+  #     completed: false
+  #   item:
+  #     id: "reminder:{id}"
 
 # Tool config for custom MCP servers (GitHub/Linear have built-in config)
 # tools:
 #   apple-reminders:
 #     response_key: reminders
-#     mappings: { title: name, body: notes }
+#     mappings:
+#       title: name
+#       body: notes
 
 # Map repos to local paths
 # repos:
-#   myorg/backend: { path: ~/code/backend }
+#   myorg/backend:
+#     path: ~/code/backend
 
-# Cleanup config (optional, has sensible defaults)
+# Cleanup config (optional, sensible defaults)
 # cleanup:
-#   ttl_days: 30  # Remove state entries older than N days
+#   ttl_days: 30
 
 # Available presets: github/my-issues, github/review-requests,
 # github/my-prs-feedback, linear/my-issues
