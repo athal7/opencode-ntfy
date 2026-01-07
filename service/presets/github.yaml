@@ -6,10 +6,10 @@ _provider:
   mappings:
     # Extract repo full name from repository_url (e.g., "https://api.github.com/repos/owner/repo")
     repository_full_name: "repository_url:/repos\\/([^/]+\\/[^/]+)$/"
-  # Reprocess items when these fields change (reopened issues, updated PRs)
+  # Reprocess items when state changes (e.g., reopened issues)
+  # Note: updated_at is NOT included because our own changes would trigger reprocessing
   reprocess_on:
     - state        # Detect reopened (closed -> open)
-    - updated_at   # Detect any updates since processing
 
 # Presets
 my-issues:

@@ -359,7 +359,7 @@ describe('poller.js', () => {
       assert.strictEqual(poller.shouldReprocess(item), true);
     });
 
-    test('shouldReprocess detects changes via updated_at timestamp', async () => {
+    test('shouldReprocess does NOT check updated_at by default (avoids self-triggering)', async () => {
       const { createPoller } = await import('../../service/poller.js');
       
       const poller = createPoller({ stateFile });
@@ -369,13 +369,36 @@ describe('poller.js', () => {
         itemUpdatedAt: '2026-01-01T00:00:00Z'
       });
       
-      // Item was updated after being processed
+      // Item was updated after being processed, but state is the same
       const item = { 
         id: 'issue-1', 
         state: 'open',
         updated_at: '2026-01-05T00:00:00Z'
       };
-      assert.strictEqual(poller.shouldReprocess(item), true);
+      // Should NOT reprocess because updated_at is not in default reprocessOn
+      assert.strictEqual(poller.shouldReprocess(item), false);
+    });
+
+    test('shouldReprocess detects updated_at when explicitly configured', async () => {
+      const { createPoller } = await import('../../service/poller.js');
+      
+      const poller = createPoller({ stateFile });
+      poller.markProcessed('issue-1', { 
+        source: 'test', 
+        itemState: 'open',
+        itemUpdatedAt: '2026-01-01T00:00:00Z'
+      });
+      
+      const item = { 
+        id: 'issue-1', 
+        state: 'open',
+        updated_at: '2026-01-05T00:00:00Z'
+      };
+      // Should reprocess when updated_at is explicitly in reprocessOn
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updated_at'] }), 
+        true
+      );
     });
 
     test('shouldReprocess returns false if updated_at is same or older', async () => {
@@ -394,7 +417,11 @@ describe('poller.js', () => {
         state: 'open',
         updated_at: '2026-01-05T00:00:00Z'
       };
-      assert.strictEqual(poller.shouldReprocess(item), false);
+      // Even with explicit config, same timestamp should not trigger
+      assert.strictEqual(
+        poller.shouldReprocess(item, { reprocessOn: ['updated_at'] }), 
+        false
+      );
     });
 
     test('shouldReprocess respects reprocessOn config', async () => {

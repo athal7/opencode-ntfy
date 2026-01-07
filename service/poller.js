@@ -444,8 +444,9 @@ export function createPoller(options = {}) {
       const meta = processedItems.get(item.id);
       if (!meta) return false; // Not processed before
       
-      // Get reprocess_on fields from options, default to common fields for backwards compatibility
-      const reprocessOn = options.reprocessOn || ['state', 'status', 'updated_at'];
+      // Get reprocess_on fields from options, default to state/status only
+      // Note: updated_at is NOT included by default because our own changes would trigger reprocessing
+      const reprocessOn = options.reprocessOn || ['state', 'status'];
       
       // Check each configured field for changes
       for (const field of reprocessOn) {

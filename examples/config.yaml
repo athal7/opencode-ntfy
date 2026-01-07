@@ -108,12 +108,11 @@ sources:
 # - Status-aware: Items are automatically reprocessed based on reprocess_on config
 #
 # Built-in presets include sensible reprocess_on defaults:
-# - GitHub: reprocess_on: [state, updated_at]  # Reopened issues, any updates
-# - Linear: reprocess_on: [status, updatedAt]  # Status changes, any updates
+# - GitHub: reprocess_on: [state]   # Reopened issues (closed -> open)
+# - Linear: reprocess_on: [status]  # Status regression (Done -> In Progress)
 #
-# You can override reprocess_on per source:
-#   - preset: github/my-issues
-#     reprocess_on: [state]  # Only reprocess reopened issues, ignore updates
+# Note: updated_at is NOT included by default because your own changes
+# (commits, comments) would trigger unwanted reprocessing.
 #
 # Manual cleanup: opencode-pilot clear [--all | --source NAME | --item ID]
 # =============================================================================
