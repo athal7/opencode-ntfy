@@ -95,6 +95,11 @@ export async function pollOnce(options = {}) {
   // Load configuration
   loadRepoConfig(configPath);
 
+  // Ensure poller is initialized for state tracking
+  if (!pollerInstance) {
+    pollerInstance = createPoller({ configPath });
+  }
+
   // Get all sources
   const sources = getAllSources();
 
