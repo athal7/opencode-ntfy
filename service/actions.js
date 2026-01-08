@@ -18,7 +18,9 @@ import os from "os";
  */
 async function getOpencodePorts() {
   try {
-    const output = execSync('lsof -i -P 2>/dev/null | grep -E "opencode.*LISTEN" || true', {
+    // Use full path to lsof since /usr/sbin may not be in PATH in all contexts
+    // (e.g., when running as a service or from certain shell environments)
+    const output = execSync('/usr/sbin/lsof -i -P 2>/dev/null | grep -E "opencode.*LISTEN" || true', {
       encoding: 'utf-8',
       timeout: 30000
     });
@@ -76,13 +78,31 @@ function getPathMatchScore(targetPath, worktree, sandboxes = []) {
 }
 
 /**
+ * Verify a server is healthy by checking it returns valid project data
+ * @param {string} url - Server URL
+ * @param {object} project - Project data already fetched from /project/current
+ * @returns {boolean} True if server appears healthy
+ */
+function isServerHealthy(project) {
+  // A healthy server should return a project with an id and time.created
+  // Stale/broken servers may return HTML or incomplete JSON
+  return !!(
+    project &&
+    typeof project === 'object' &&
+    project.id &&
+    project.time &&
+    typeof project.time.created === 'number'
+  );
+}
+
+/**
  * Discover a running opencode server that matches the target directory
  * 
  * Queries all running opencode servers and finds the best match based on:
  * 1. Exact sandbox match (highest priority)
  * 2. Exact worktree match
  * 3. Target is subdirectory of worktree
- * 4. Global project (worktree="/") as fallback
+ * 4. Global project (worktree="/") as fallback (e.g., OpenCode Desktop)
  * 
  * @param {string} targetDir - The directory we want to work in
  * @param {object} [options] - Options for testing/mocking
@@ -115,6 +135,13 @@ export async function discoverOpencodeServer(targetDir, options = {}) {
       }
       
       const project = await response.json();
+      
+      // Health check: verify response has expected structure
+      if (!isServerHealthy(project)) {
+        debug(`discoverOpencodeServer: ${url} failed health check (invalid project data)`);
+        continue;
+      }
+      
       const worktree = project.worktree || '/';
       const sandboxes = project.sandboxes || [];
       

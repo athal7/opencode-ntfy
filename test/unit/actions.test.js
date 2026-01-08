@@ -310,10 +310,10 @@ describe('actions.js', () => {
       const mockPorts = async () => [3000, 4000];
       const mockFetch = async (url) => {
         if (url === 'http://localhost:3000/project/current') {
-          return { ok: true, json: async () => ({ worktree: '/Users/test/project-a', sandboxes: [] }) };
+          return { ok: true, json: async () => ({ id: 'proj-a', worktree: '/Users/test/project-a', sandboxes: [], time: { created: 1 } }) };
         }
         if (url === 'http://localhost:4000/project/current') {
-          return { ok: true, json: async () => ({ worktree: '/Users/test/project-b', sandboxes: [] }) };
+          return { ok: true, json: async () => ({ id: 'proj-b', worktree: '/Users/test/project-b', sandboxes: [], time: { created: 1 } }) };
         }
         return { ok: false };
       };
@@ -332,7 +332,7 @@ describe('actions.js', () => {
       const mockPorts = async () => [3000];
       const mockFetch = async (url) => {
         if (url === 'http://localhost:3000/project/current') {
-          return { ok: true, json: async () => ({ worktree: '/Users/test/project', sandboxes: [] }) };
+          return { ok: true, json: async () => ({ id: 'proj', worktree: '/Users/test/project', sandboxes: [], time: { created: 1 } }) };
         }
         return { ok: false };
       };
@@ -352,8 +352,10 @@ describe('actions.js', () => {
       const mockFetch = async (url) => {
         if (url === 'http://localhost:3000/project/current') {
           return { ok: true, json: async () => ({ 
+            id: 'proj',
             worktree: '/Users/test/project', 
-            sandboxes: ['/Users/test/.opencode/worktree/abc/sandbox-1'] 
+            sandboxes: ['/Users/test/.opencode/worktree/abc/sandbox-1'],
+            time: { created: 1 }
           }) };
         }
         return { ok: false };
@@ -374,11 +376,11 @@ describe('actions.js', () => {
       const mockFetch = async (url) => {
         if (url === 'http://localhost:3000/project/current') {
           // Global project
-          return { ok: true, json: async () => ({ worktree: '/', sandboxes: [] }) };
+          return { ok: true, json: async () => ({ id: 'global', worktree: '/', sandboxes: [], time: { created: 1 } }) };
         }
         if (url === 'http://localhost:4000/project/current') {
           // Specific project
-          return { ok: true, json: async () => ({ worktree: '/Users/test/project', sandboxes: [] }) };
+          return { ok: true, json: async () => ({ id: 'proj', worktree: '/Users/test/project', sandboxes: [], time: { created: 1 } }) };
         }
         return { ok: false };
       };
@@ -392,17 +394,19 @@ describe('actions.js', () => {
       assert.strictEqual(result, 'http://localhost:4000');
     });
 
-    test('falls back to global project when no specific match', async () => {
+    test('falls back to healthy global project when no specific match', async () => {
       const { discoverOpencodeServer } = await import('../../service/actions.js');
       
       const mockPorts = async () => [3000];
       const mockFetch = async (url) => {
         if (url === 'http://localhost:3000/project/current') {
-          return { ok: true, json: async () => ({ worktree: '/', sandboxes: [] }) };
+          // Healthy global project with proper structure
+          return { ok: true, json: async () => ({ id: 'global', worktree: '/', sandboxes: [], time: { created: 1 } }) };
         }
         return { ok: false };
       };
       
+      // Global servers (like OpenCode Desktop) should work as fallback
       const result = await discoverOpencodeServer('/Users/test/random/path', { 
         getPorts: mockPorts,
         fetch: mockFetch
@@ -436,7 +440,7 @@ describe('actions.js', () => {
           return { ok: false };
         }
         if (url === 'http://localhost:4000/project/current') {
-          return { ok: true, json: async () => ({ worktree: '/Users/test/project', sandboxes: [] }) };
+          return { ok: true, json: async () => ({ id: 'proj', worktree: '/Users/test/project', sandboxes: [], time: { created: 1 } }) };
         }
         return { ok: false };
       };
@@ -447,6 +451,76 @@ describe('actions.js', () => {
       });
       
       assert.strictEqual(result, 'http://localhost:4000');
+    });
+
+    test('skips servers that return invalid JSON', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000, 4000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          // Stale server returning HTML
+          return { 
+            ok: true, 
+            json: async () => { throw new SyntaxError('Unexpected token < in JSON'); }
+          };
+        }
+        if (url === 'http://localhost:4000/project/current') {
+          return { ok: true, json: async () => ({ id: 'proj', worktree: '/Users/test/project', sandboxes: [], time: { created: 1 } }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/project', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:4000');
+    });
+
+    test('skips servers with incomplete project data (missing time)', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000, 4000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          // Server returning incomplete response (missing time.created)
+          return { ok: true, json: async () => ({ id: 'broken', worktree: '/Users/test/project', sandboxes: [] }) };
+        }
+        if (url === 'http://localhost:4000/project/current') {
+          return { ok: true, json: async () => ({ id: 'proj', worktree: '/Users/test/project', sandboxes: [], time: { created: 1 } }) };
+        }
+        return { ok: false };
+      };
+      
+      const result = await discoverOpencodeServer('/Users/test/project', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, 'http://localhost:4000');
+    });
+
+    test('returns null when server returns unhealthy project data', async () => {
+      const { discoverOpencodeServer } = await import('../../service/actions.js');
+      
+      const mockPorts = async () => [3000];
+      const mockFetch = async (url) => {
+        if (url === 'http://localhost:3000/project/current') {
+          // Server returns incomplete/unhealthy data (missing id and time)
+          return { ok: true, json: async () => ({ worktree: '/', sandboxes: [] }) };
+        }
+        return { ok: false };
+      };
+      
+      // Server that returns unhealthy project data should be skipped
+      const result = await discoverOpencodeServer('/Users/test/specific-project', { 
+        getPorts: mockPorts,
+        fetch: mockFetch
+      });
+      
+      assert.strictEqual(result, null, 'Should return null when server returns unhealthy project data');
     });
   });
 
