@@ -309,9 +309,10 @@ export function getCommandInfoNew(item, config, templatesDir, serverUrl) {
   // Build command args
   const args = ["opencode", "run"];
   
-  // Add --attach if server URL is provided
+  // Add --attach and --dir if server URL is provided
   if (serverUrl) {
     args.push("--attach", serverUrl);
+    args.push("--dir", cwd);
   }
   
   // Add session title

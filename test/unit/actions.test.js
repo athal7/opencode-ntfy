@@ -232,7 +232,7 @@ describe('actions.js', () => {
       assert.ok(lastArg.includes('Fix bug'), 'Prompt should include title');
     });
 
-    test('includes --attach when serverUrl is provided', async () => {
+    test('includes --attach and --dir when serverUrl is provided', async () => {
       const { getCommandInfoNew } = await import('../../service/actions.js');
       
       const item = { number: 123, title: 'Fix bug' };
@@ -245,6 +245,8 @@ describe('actions.js', () => {
       
       assert.ok(cmdInfo.args.includes('--attach'), 'Should include --attach flag');
       assert.ok(cmdInfo.args.includes('http://localhost:4096'), 'Should include server URL');
+      assert.ok(cmdInfo.args.includes('--dir'), 'Should include --dir flag');
+      assert.ok(cmdInfo.args.includes(cmdInfo.cwd), 'Should include working directory');
     });
 
     test('does not include --attach when serverUrl is null', async () => {
