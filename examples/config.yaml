@@ -42,6 +42,8 @@ sources:
   #     completed: false
   #   item:
   #     id: "reminder:{id}"
+  #   session:
+  #     name: "{title}"  # Optional: custom session name (presets have semantic defaults)
 
 # Tool config for custom MCP servers (GitHub/Linear have built-in config)
 # tools:
