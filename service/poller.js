@@ -274,16 +274,52 @@ export async function pollGenericSource(source, options = {}) {
 }
 
 /**
+ * Fetch issue comments using gh CLI
+ * 
+ * The GitHub MCP server doesn't have a tool to list issue comments,
+ * so we use gh CLI directly. This fetches the conversation thread
+ * where bots like Linear post their comments.
+ * 
+ * @param {string} owner - Repository owner
+ * @param {string} repo - Repository name
+ * @param {number} number - Issue/PR number
+ * @param {number} timeout - Timeout in ms
+ * @returns {Promise<Array>} Array of comment objects
+ */
+async function fetchIssueCommentsViaCli(owner, repo, number, timeout) {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+  
+  try {
+    const { stdout } = await Promise.race([
+      execAsync(`gh api repos/${owner}/${repo}/issues/${number}/comments`),
+      createTimeout(timeout, "gh api call"),
+    ]);
+    
+    const comments = JSON.parse(stdout);
+    return Array.isArray(comments) ? comments : [];
+  } catch (err) {
+    // gh CLI might not be available or authenticated
+    console.error(`[poller] Error fetching issue comments via gh: ${err.message}`);
+    return [];
+  }
+}
+
+/**
  * Fetch comments for a GitHub issue/PR and enrich the item
  * 
- * Uses the github_get_pull_request_comments tool to fetch review comments,
- * or falls back to direct API call for issue comments.
+ * Fetches BOTH types of comments:
+ * 1. PR review comments (inline code comments) via MCP github_get_pull_request_comments
+ * 2. Issue comments (conversation thread) via gh CLI
+ * 
+ * This is necessary because bots like Linear post to issue comments, not PR review comments.
  * 
  * @param {object} item - Item with owner, repo_short, and number fields
  * @param {object} [options] - Options
  * @param {number} [options.timeout] - Timeout in ms (default: 30000)
  * @param {string} [options.opencodeConfigPath] - Path to opencode.json for MCP config
- * @returns {Promise<Array>} Array of comment objects
+ * @returns {Promise<Array>} Array of comment objects (merged from both endpoints)
  */
 export async function fetchGitHubComments(item, options = {}) {
   const timeout = options.timeout || DEFAULT_MCP_TIMEOUT;
@@ -322,24 +358,31 @@ export async function fetchGitHubComments(item, options = {}) {
       createTimeout(timeout, "MCP connection for comments"),
     ]);
     
-    // Use github_get_pull_request_comments for PR review comments
-    const result = await Promise.race([
+    // Fetch both PR review comments (via MCP) AND issue comments (via gh CLI) in parallel
+    const [prCommentsResult, issueComments] = await Promise.all([
+      // PR review comments via MCP (may not be available on all MCP servers)
       client.callTool({ 
         name: "github_get_pull_request_comments", 
         arguments: { owner, repo, pull_number: number } 
-      }),
-      createTimeout(timeout, "fetch comments"),
+      }).catch(() => null), // Gracefully handle if tool doesn't exist
+      // Issue comments via gh CLI (conversation thread where Linear bot posts)
+      fetchIssueCommentsViaCli(owner, repo, number, timeout),
     ]);
     
-    const text = result.content?.[0]?.text;
-    if (!text) return [];
-    
-    try {
-      const comments = JSON.parse(text);
-      return Array.isArray(comments) ? comments : [];
-    } catch {
-      return [];
+    // Parse PR review comments
+    let prComments = [];
+    const prText = prCommentsResult?.content?.[0]?.text;
+    if (prText) {
+      try {
+        const parsed = JSON.parse(prText);
+        prComments = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        // Ignore parse errors
+      }
     }
+    
+    // Return merged comments from both sources
+    return [...prComments, ...issueComments];
   } catch (err) {
     console.error(`[poller] Error fetching comments: ${err.message}`);
     return [];
