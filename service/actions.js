@@ -242,7 +242,7 @@ export function getCommandInfoNew(item, config, templatesDir, serverUrl) {
   // Build session name
   const sessionName = config.session?.name
     ? buildSessionName(config.session.name, item)
-    : `session-${item.number || item.id || Date.now()}`;
+    : (item.title || `session-${Date.now()}`);
 
   // Build command args
   const args = ["opencode", "run"];
@@ -297,13 +297,14 @@ function buildPrompt(item, config) {
 /**
  * Build command args for action
  * Uses "opencode run" for non-interactive execution
+ * @deprecated Legacy function - not currently used. See getCommandInfoNew instead.
  * @returns {object} { args: string[], cwd: string }
  */
 function buildCommandArgs(item, config) {
   const repoPath = expandPath(config.repo_path || ".");
   const sessionTitle = config.session?.name_template
     ? buildSessionName(config.session.name_template, item)
-    : `issue-${item.number || Date.now()}`;
+    : (item.title || `session-${Date.now()}`);
 
   // Build opencode run command args array (non-interactive)
   // Note: --title sets session title (--session is for continuing existing sessions)

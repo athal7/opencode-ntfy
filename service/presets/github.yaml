@@ -22,6 +22,8 @@ my-issues:
   item:
     id: "{html_url}"
   repo: "{repository_full_name}"
+  session:
+    name: "{title}"
 
 review-requests:
   name: review-requests
@@ -33,6 +35,8 @@ review-requests:
   item:
     id: "{html_url}"
   repo: "{repository_full_name}"
+  session:
+    name: "Review: {title}"
 
 my-prs-feedback:
   name: my-prs-feedback
@@ -46,6 +50,8 @@ my-prs-feedback:
   item:
     id: "{html_url}"
   repo: "{repository_full_name}"
+  session:
+    name: "Feedback: {title}"
   # Reprocess when PR is updated (new commits pushed, new comments, etc.)
   # This ensures we re-trigger after addressing review feedback
   reprocess_on:

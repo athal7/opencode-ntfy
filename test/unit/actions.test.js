@@ -260,6 +260,38 @@ describe('actions.js', () => {
       
       assert.ok(!cmdInfo.args.includes('--attach'), 'Should not include --attach flag');
     });
+
+    test('uses item title as session name when no session.name configured', async () => {
+      const { getCommandInfoNew } = await import('../../service/actions.js');
+      
+      const item = { id: 'reminder-123', title: 'Review quarterly reports' };
+      const config = {
+        path: '~/code/backend',
+        prompt: 'default'
+      };
+      
+      const cmdInfo = getCommandInfoNew(item, config, templatesDir);
+      
+      const titleIndex = cmdInfo.args.indexOf('--title');
+      assert.ok(titleIndex !== -1, 'Should have --title flag');
+      assert.strictEqual(cmdInfo.args[titleIndex + 1], 'Review quarterly reports', 'Should use item title as session name');
+    });
+
+    test('falls back to timestamp when no session.name and no title', async () => {
+      const { getCommandInfoNew } = await import('../../service/actions.js');
+      
+      const item = { id: 'item-123' };
+      const config = {
+        path: '~/code/backend',
+        prompt: 'default'
+      };
+      
+      const cmdInfo = getCommandInfoNew(item, config, templatesDir);
+      
+      const titleIndex = cmdInfo.args.indexOf('--title');
+      assert.ok(titleIndex !== -1, 'Should have --title flag');
+      assert.ok(cmdInfo.args[titleIndex + 1].startsWith('session-'), 'Should fall back to session-{timestamp}');
+    });
   });
 
   describe('discoverOpencodeServer', () => {

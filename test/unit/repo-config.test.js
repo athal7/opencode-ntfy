@@ -664,6 +664,44 @@ sources:
       const filteredItem = { repository_full_name: 'other/repo' };
       assert.deepStrictEqual(resolveRepoForItem(source, filteredItem), []);
     });
+
+    test('github presets include semantic session names', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: github/my-issues
+  - preset: github/review-requests
+  - preset: github/my-prs-feedback
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      // my-issues: just the title
+      assert.strictEqual(sources[0].session.name, '{title}', 'my-issues should use title');
+      
+      // review-requests: "Review: {title}"
+      assert.strictEqual(sources[1].session.name, 'Review: {title}', 'review-requests should prefix with Review:');
+      
+      // my-prs-feedback: "Feedback: {title}"
+      assert.strictEqual(sources[2].session.name, 'Feedback: {title}', 'my-prs-feedback should prefix with Feedback:');
+    });
+
+    test('linear preset includes session name', async () => {
+      writeFileSync(configPath, `
+sources:
+  - preset: linear/my-issues
+    args:
+      teamId: "team-uuid"
+      assigneeId: "user-uuid"
+`);
+
+      const { loadRepoConfig, getSources } = await import('../../service/repo-config.js');
+      loadRepoConfig(configPath);
+      const sources = getSources();
+
+      assert.strictEqual(sources[0].session.name, '{title}', 'linear/my-issues should use title');
+    });
   });
 
   describe('shorthand syntax', () => {
