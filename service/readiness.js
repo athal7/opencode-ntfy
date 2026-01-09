@@ -135,6 +135,46 @@ export function checkDependencies(issue, config) {
 }
 
 /**
+ * Check if item fields match required values
+ * 
+ * Generic field-based readiness check. Configured via readiness.fields in config.
+ * All specified fields must match their required values for the item to be ready.
+ * 
+ * Example config:
+ *   readiness:
+ *     fields:
+ *       has_notes: true
+ *       type: "meeting"
+ * 
+ * @param {object} item - Item with fields to check
+ * @param {object} config - Config with optional readiness.fields
+ * @returns {object} { ready: boolean, reason?: string }
+ */
+export function checkFields(item, config) {
+  const readinessConfig = config.readiness || {};
+  const fieldsConfig = readinessConfig.fields || {};
+  
+  // No fields configured - skip check
+  if (Object.keys(fieldsConfig).length === 0) {
+    return { ready: true };
+  }
+  
+  // Check each required field
+  for (const [field, requiredValue] of Object.entries(fieldsConfig)) {
+    const actualValue = item[field];
+    
+    if (actualValue !== requiredValue) {
+      return {
+        ready: false,
+        reason: `Field '${field}' is ${JSON.stringify(actualValue)}, required ${JSON.stringify(requiredValue)}`,
+      };
+    }
+  }
+  
+  return { ready: true };
+}
+
+/**
  * Check if a PR/issue has meaningful (non-bot, non-author) comments
  * 
  * This check is only applied when the item has been enriched with `_comments`
@@ -242,6 +282,16 @@ export function evaluateReadiness(issue, config) {
     return {
       ready: false,
       reason: botResult.reason,
+      priority: 0,
+    };
+  }
+
+  // Check required field values
+  const fieldsResult = checkFields(issue, config);
+  if (!fieldsResult.ready) {
+    return {
+      ready: false,
+      reason: fieldsResult.reason,
       priority: 0,
     };
   }

@@ -172,6 +172,143 @@ describe('readiness.js', () => {
     });
   });
 
+  describe('checkFields', () => {
+    test('returns ready when no fields configured', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const item = { id: 'item-1', has_notes: false };
+      const config = {};
+      
+      const result = checkFields(item, config);
+      
+      assert.strictEqual(result.ready, true);
+    });
+
+    test('returns ready when field matches required value (boolean)', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const meeting = { id: 'meeting-1', has_notes: true };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true
+          }
+        }
+      };
+      
+      const result = checkFields(meeting, config);
+      
+      assert.strictEqual(result.ready, true);
+    });
+
+    test('returns not ready when field does not match required value', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const meeting = { id: 'meeting-1', has_notes: false };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true
+          }
+        }
+      };
+      
+      const result = checkFields(meeting, config);
+      
+      assert.strictEqual(result.ready, false);
+      assert.ok(result.reason.includes('has_notes'));
+    });
+
+    test('returns not ready when required field is missing', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const item = { id: 'item-1', title: 'Test' };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true
+          }
+        }
+      };
+      
+      const result = checkFields(item, config);
+      
+      assert.strictEqual(result.ready, false);
+      assert.ok(result.reason.includes('has_notes'));
+    });
+
+    test('checks multiple fields (all must match)', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const item = { id: 'item-1', has_notes: true, type: 'meeting' };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true,
+            type: 'meeting'
+          }
+        }
+      };
+      
+      const result = checkFields(item, config);
+      
+      assert.strictEqual(result.ready, true);
+    });
+
+    test('fails if any field does not match', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const item = { id: 'item-1', has_notes: true, type: 'note' };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true,
+            type: 'meeting'
+          }
+        }
+      };
+      
+      const result = checkFields(item, config);
+      
+      assert.strictEqual(result.ready, false);
+      assert.ok(result.reason.includes('type'));
+    });
+
+    test('supports string field values', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const item = { id: 'item-1', state: 'open' };
+      const config = {
+        readiness: {
+          fields: {
+            state: 'open'
+          }
+        }
+      };
+      
+      const result = checkFields(item, config);
+      
+      assert.strictEqual(result.ready, true);
+    });
+
+    test('supports numeric field values', async () => {
+      const { checkFields } = await import('../../service/readiness.js');
+      
+      const item = { id: 'item-1', participant_count: 3 };
+      const config = {
+        readiness: {
+          fields: {
+            participant_count: 3
+          }
+        }
+      };
+      
+      const result = checkFields(item, config);
+      
+      assert.strictEqual(result.ready, true);
+    });
+  });
+
   describe('evaluateReadiness', () => {
     test('checks bot comments when _comments is present', async () => {
       const { evaluateReadiness } = await import('../../service/readiness.js');
@@ -203,6 +340,49 @@ describe('readiness.js', () => {
       const config = {};
       
       const result = evaluateReadiness(pr, config);
+      
+      assert.strictEqual(result.ready, true);
+    });
+
+    test('checks fields when readiness.fields is configured', async () => {
+      const { evaluateReadiness } = await import('../../service/readiness.js');
+      
+      const meeting = {
+        id: 'meeting-123',
+        title: 'Team Standup',
+        has_notes: false
+      };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true
+          }
+        }
+      };
+      
+      const result = evaluateReadiness(meeting, config);
+      
+      assert.strictEqual(result.ready, false);
+      assert.ok(result.reason.includes('has_notes'));
+    });
+
+    test('passes when field matches required value', async () => {
+      const { evaluateReadiness } = await import('../../service/readiness.js');
+      
+      const meeting = {
+        id: 'meeting-123',
+        title: 'Team Standup',
+        has_notes: true
+      };
+      const config = {
+        readiness: {
+          fields: {
+            has_notes: true
+          }
+        }
+      };
+      
+      const result = evaluateReadiness(meeting, config);
       
       assert.strictEqual(result.ready, true);
     });

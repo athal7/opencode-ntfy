@@ -700,8 +700,9 @@ sources:
       loadRepoConfig(configPath);
       const sources = getSources();
 
-      assert.strictEqual(sources[0].session.name, '{title}', 'linear/my-issues should use title');
+      assert.strictEqual(sources[0].session.name, '{title}', 'linear preset should use title');
     });
+
   });
 
   describe('shorthand syntax', () => {

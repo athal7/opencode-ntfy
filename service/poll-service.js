@@ -146,7 +146,17 @@ export async function pollOnce(options = {}) {
         const repoKey = repoKeys.length > 0 ? repoKeys[0] : null;
         const repoConfig = repoKey ? getRepoConfig(repoKey) : {};
         
-        const readiness = evaluateReadiness(item, repoConfig);
+        // Merge source-level readiness config with repo config
+        // Source readiness takes precedence
+        const readinessConfig = {
+          ...repoConfig,
+          readiness: {
+            ...repoConfig.readiness,
+            ...source.readiness,
+          },
+        };
+        
+        const readiness = evaluateReadiness(item, readinessConfig);
         debug(`Item ${item.id}: ready=${readiness.ready}, reason=${readiness.reason || 'none'}`);
         return {
           ...item,
